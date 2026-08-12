@@ -1,42 +1,53 @@
 import React from 'react';
 import type { UserMediaError } from '../types/webrtc.js';
+import { AlertTriangle, ShieldAlert, CameraOff, RefreshCw, X } from 'lucide-react';
 
 interface ErrorBannerProps {
   error: UserMediaError;
   onDismiss: () => void;
+  onRetry?: () => void;
 }
 
-export const ErrorBanner: React.FC<ErrorBannerProps> = ({ error, onDismiss }) => {
+export const ErrorBanner: React.FC<ErrorBannerProps> = ({ error, onDismiss, onRetry }) => {
   const getIcon = () => {
     switch (error.type) {
       case 'PERMISSION_DENIED':
-        return '🚫';
+        return <ShieldAlert size={20} className="banner-icon-svg" />;
       case 'DEVICE_NOT_FOUND':
-        return '📷❌';
-      case 'ROOM_FULL':
-        return '👥❌';
-      case 'PEER_LEFT':
-        return '👋';
+        return <CameraOff size={20} className="banner-icon-svg" />;
       case 'SIGNALING_UNAVAILABLE':
       case 'CONNECTION_FAILED':
       default:
-        return '⚠️';
+        return <AlertTriangle size={20} className="banner-icon-svg" />;
     }
   };
 
   return (
-    <div className={`error-banner banner-${error.type.toLowerCase()}`}>
-      <div className="banner-content">
-        <span className="banner-icon">{getIcon()}</span>
-        <div className="banner-text">
-          <strong className="banner-title">{error.title}</strong>
-          <p className="banner-message">{error.message}</p>
-          {error.details && <small className="banner-details">Details: {error.details}</small>}
+    <div className={`app-alert-banner alert-${error.type.toLowerCase()}`}>
+      <div className="alert-content">
+        <div className="alert-icon-col">{getIcon()}</div>
+        <div className="alert-text-col">
+          <strong className="alert-title">{error.title}</strong>
+          <p className="alert-message">{error.message}</p>
+          {error.details && <small className="alert-details">{error.details}</small>}
         </div>
       </div>
-      <button type="button" className="banner-dismiss" onClick={onDismiss} title="Dismiss warning">
-        ✕
-      </button>
+
+      <div className="alert-actions">
+        {onRetry && (
+          <button type="button" className="btn btn-sm btn-outline" onClick={onRetry}>
+            <RefreshCw size={12} /> Try Again
+          </button>
+        )}
+        <button
+          type="button"
+          className="alert-dismiss-btn"
+          onClick={onDismiss}
+          aria-label="Dismiss banner"
+        >
+          <X size={16} />
+        </button>
+      </div>
     </div>
   );
 };

@@ -1,74 +1,136 @@
+import { useState } from 'react';
 import { useWebRTC } from './hooks/useWebRTC.js';
-import { JoinForm } from './components/JoinForm.js';
+import { Header } from './components/Header.js';
+import { JoinScreen } from './components/JoinScreen.js';
 import { VideoGrid } from './components/VideoGrid.js';
 import { CallControls } from './components/CallControls.js';
-import { ConnectionStatus } from './components/ConnectionStatus.js';
 import { QualityPanel } from './components/QualityPanel.js';
+import { CallEndedScreen } from './components/CallEndedScreen.js';
 import { ErrorBanner } from './components/ErrorBanner.js';
 import './styles.css';
 
 export function App() {
   const {
     connectionState,
-    statusMessage,
     localStream,
     remoteStream,
     mediaError,
     mediaControls,
     qualityMetrics,
+    callDuration,
+    lastCallDuration,
+    roomId,
+    displayName,
+    signalingStatus,
     joinCall,
     hangUp,
+    resetToHome,
     toggleAudio,
     toggleVideo,
     clearError,
+    acquireLocalMedia,
   } = useWebRTC();
 
-  const isIdle = connectionState === 'idle';
-  const isJoining = connectionState === 'joining';
+  const [isQualityOpen, setIsQualityOpen] = useState(false);
+  const [isTechOpen, setIsTechOpen] = useState(false);
+
+  const isCallActive =
+    connectionState !== 'idle' &&
+    connectionState !== 'joining' &&
+    connectionState !== 'ended';
+
+  const isEnded = connectionState === 'ended';
+
+  const handleToggleQuality = () => {
+    setIsQualityOpen((prev) => !prev);
+    setIsTechOpen(false);
+  };
+
+  const handleToggleTech = () => {
+    setIsTechOpen((prev) => !prev);
+    setIsQualityOpen(false);
+  };
+
+  const handleClosePanels = () => {
+    setIsQualityOpen(false);
+    setIsTechOpen(false);
+  };
 
   return (
-    <div className="app-container">
-      {/* Header */}
-      <header className="app-header">
-        <div className="brand-title">
-          <h1>Reneo WebRTC Assessment</h1>
-          <span className="badge-tag">2-Party Native WebRTC</span>
-        </div>
-        {!isIdle && (
-          <button type="button" className="btn btn-secondary" onClick={hangUp}>
-            Leave Call
-          </button>
-        )}
-      </header>
+    <div className="app-root">
+      {/* Top Navigation Bar */}
+      <Header
+        roomId={roomId}
+        connectionState={connectionState}
+        callDuration={callDuration}
+        isCallActive={isCallActive}
+      />
 
-      {/* Global Error Banner */}
-      {mediaError && <ErrorBanner error={mediaError} onDismiss={clearError} />}
+      {/* Global Error & Recovery Banners */}
+      {mediaError && (
+        <ErrorBanner
+          error={mediaError}
+          onDismiss={clearError}
+          onRetry={() => {
+            clearError();
+            acquireLocalMedia();
+          }}
+        />
+      )}
 
-      {/* Connection Status Bar */}
-      <ConnectionStatus state={connectionState} message={statusMessage} />
+      {/* STATE 1: Join Screen */}
+      {!isCallActive && !isEnded && (
+        <JoinScreen
+          onJoin={joinCall}
+          isLoading={connectionState === 'joining'}
+          signalingStatus={signalingStatus}
+        />
+      )}
 
-      {/* Main Content View */}
-      {isIdle || isJoining ? (
-        <JoinForm onJoin={joinCall} isLoading={isJoining} />
-      ) : (
-        <>
+      {/* STATE 2: Active Call Workspace */}
+      {isCallActive && (
+        <main className="call-workspace">
           <VideoGrid
             localStream={localStream}
             remoteStream={remoteStream}
             connectionState={connectionState}
             isVideoDisabled={mediaControls.isVideoDisabled}
             isAudioMuted={mediaControls.isAudioMuted}
+            roomId={roomId}
+            displayName={displayName}
           />
 
+          {/* Part B3 Quality & Technical Details Overlay Panel */}
+          <QualityPanel
+            metrics={qualityMetrics}
+            isConnected={connectionState === 'connected'}
+            isOpen={isQualityOpen}
+            isTechOpen={isTechOpen}
+            onClose={handleClosePanels}
+          />
+
+          {/* Bottom Control Bar */}
           <CallControls
             controls={mediaControls}
+            isQualityOpen={isQualityOpen}
+            isTechOpen={isTechOpen}
             onToggleAudio={toggleAudio}
             onToggleVideo={toggleVideo}
+            onToggleQuality={handleToggleQuality}
+            onToggleTech={handleToggleTech}
             onHangUp={hangUp}
           />
+        </main>
+      )}
 
-          <QualityPanel metrics={qualityMetrics} isConnected={connectionState === 'connected'} />
-        </>
+      {/* STATE 3: Post-Call / Call Ended Screen */}
+      {isEnded && (
+        <CallEndedScreen
+          roomId={roomId}
+          durationSeconds={lastCallDuration}
+          onJoinAgain={() => joinCall(roomId, displayName)}
+          onReturnHome={resetToHome}
+        />
       )}
     </div>
   );

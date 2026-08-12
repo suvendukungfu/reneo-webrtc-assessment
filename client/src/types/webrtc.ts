@@ -6,7 +6,8 @@ export type AppConnectionState =
   | 'connected'
   | 'reconnecting'
   | 'disconnected'
-  | 'failed';
+  | 'failed'
+  | 'ended';
 
 export interface ConnectionStateInfo {
   state: AppConnectionState;

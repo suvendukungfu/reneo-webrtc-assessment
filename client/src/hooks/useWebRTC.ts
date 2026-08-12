@@ -17,21 +17,33 @@ export function useWebRTC() {
   });
   const [qualityMetrics, setQualityMetrics] = useState<QualityMetrics | null>(null);
 
+  // Call Duration Timer
+  const [callDuration, setCallDuration] = useState<number>(0);
+  const [lastCallDuration, setLastCallDuration] = useState<number>(0);
+
   // Persistent References
   const isInitiatorRef = useRef<boolean>(false);
   const roomIdRef = useRef<string | null>(null);
+  const displayNameRef = useRef<string>('Anonymous');
   const clientIdRef = useRef<string | null>(null);
   const peerIdRef = useRef<string | null>(null);
   const iceRestartCountRef = useRef<number>(0);
   const localStreamRef = useRef<MediaStream | null>(null);
+  const timerIntervalRef = useRef<number | null>(null);
   const maxIceRestarts = 2;
 
   const webrtcServiceRef = useRef<WebRTCService | null>(null);
   const statsServiceRef = useRef<StatsService>(new StatsService());
 
+  const connectionStateRef = useRef<AppConnectionState>(connectionState);
+  useEffect(() => {
+    connectionStateRef.current = connectionState;
+  }, [connectionState]);
+
   // Update UI status message based on AppConnectionState
   const updateState = useCallback((newState: AppConnectionState, customMessage?: string) => {
     setConnectionState(newState);
+    connectionStateRef.current = newState;
     if (customMessage) {
       setStatusMessage(customMessage);
       return;
@@ -61,6 +73,9 @@ export function useWebRTC() {
       case 'failed':
         setStatusMessage('Connection failed. Please try again.');
         break;
+      case 'ended':
+        setStatusMessage('Call ended.');
+        break;
     }
   }, []);
 
@@ -68,6 +83,22 @@ export function useWebRTC() {
   useEffect(() => {
     updateStateRef.current = updateState;
   }, [updateState]);
+
+  // Call Duration Timer Management
+  const stopDurationTimer = useCallback(() => {
+    if (timerIntervalRef.current !== null) {
+      window.clearInterval(timerIntervalRef.current);
+      timerIntervalRef.current = null;
+    }
+  }, []);
+
+  const startDurationTimer = useCallback(() => {
+    stopDurationTimer();
+    setCallDuration(0);
+    timerIntervalRef.current = window.setInterval(() => {
+      setCallDuration((prev) => prev + 1);
+    }, 1000);
+  }, [stopDurationTimer]);
 
   // Set up signaling hooks with callbacks
   const signaling = useSignaling({
@@ -139,8 +170,9 @@ export function useWebRTC() {
       setRemoteStream(null);
       statsServiceRef.current.stopPolling();
       setQualityMetrics(null);
+      stopDurationTimer();
 
-      // Promote to initiator if remaining alone in room
+      // Promote remaining peer to initiator
       if (payload.isInitiator !== undefined) {
         isInitiatorRef.current = payload.isInitiator;
       } else {
@@ -167,7 +199,7 @@ export function useWebRTC() {
         title: 'Room Full',
         message: payload.message,
       });
-      cleanupCall();
+      cleanupCall(false);
       updateStateRef.current('idle');
     },
 
@@ -180,7 +212,9 @@ export function useWebRTC() {
     },
 
     onSignalingDisconnected: () => {
-      updateStateRef.current('disconnected');
+      if (connectionStateRef.current !== 'ended') {
+        updateStateRef.current('disconnected');
+      }
     },
   });
 
@@ -201,7 +235,7 @@ export function useWebRTC() {
     iceRestartCountRef.current += 1;
     updateStateRef.current(
       'reconnecting',
-      `Attempting ICE restart (${iceRestartCountRef.current}/${maxIceRestarts})...`
+      `Re-establishing network path (${iceRestartCountRef.current}/${maxIceRestarts})...`
     );
 
     if (isInitiatorRef.current && webrtcServiceRef.current) {
@@ -239,6 +273,7 @@ export function useWebRTC() {
         if (state === 'connected' || iceState === 'connected' || iceState === 'completed') {
           updateStateRef.current('connected');
           iceRestartCountRef.current = 0; // Reset restart counter on clean connect
+          startDurationTimer();
 
           // Start getStats observability polling
           const pc = webrtcServiceRef.current?.getPeerConnection();
@@ -252,9 +287,13 @@ export function useWebRTC() {
         } else if (iceState === 'disconnected') {
           updateStateRef.current('reconnecting');
         } else if (state === 'failed' || iceState === 'failed') {
+          stopDurationTimer();
           handleIceFailureRef.current();
         } else if (state === 'closed' || iceState === 'closed') {
-          updateStateRef.current('disconnected');
+          stopDurationTimer();
+          if (connectionStateRef.current !== 'ended') {
+            updateStateRef.current('disconnected');
+          }
         }
       },
       onIceFailureNeeded: () => {
@@ -267,8 +306,9 @@ export function useWebRTC() {
     return () => {
       service.close();
       statsServiceRef.current.stopPolling();
+      stopDurationTimer();
     };
-  }, []); // Run ONCE on mount
+  }, [startDurationTimer, stopDurationTimer]);
 
   // Request Local Media (Camera & Microphone)
   const acquireLocalMedia = useCallback(async (): Promise<MediaStream | null> => {
@@ -300,15 +340,15 @@ export function useWebRTC() {
       if (err.name === 'NotAllowedError' || err.name === 'PermissionDeniedError') {
         setMediaError({
           type: 'PERMISSION_DENIED',
-          title: 'Permission Denied',
-          message: 'Camera and microphone access was denied. Please allow media permissions in your browser settings and try again.',
+          title: 'Camera and microphone access is required',
+          message: 'Please allow access in your browser settings and try again.',
           details: err.message,
         });
       } else if (err.name === 'NotFoundError' || err.name === 'DevicesNotFoundError') {
         setMediaError({
           type: 'DEVICE_NOT_FOUND',
-          title: 'Media Device Missing',
-          message: 'No camera or microphone was found on this device. Please connect a camera and microphone to continue.',
+          title: 'No media device detected',
+          message: 'No camera or microphone was found on this device. Please connect a media device.',
           details: err.message,
         });
       } else {
@@ -324,8 +364,11 @@ export function useWebRTC() {
     }
   }, [updateState]);
 
-  // Full Cleanup on Hang Up
-  const cleanupCall = useCallback(() => {
+  // Full Cleanup on Hang Up / Transition
+  const cleanupCall = useCallback((toEndedState: boolean = true) => {
+    stopDurationTimer();
+    setLastCallDuration(callDuration);
+    setCallDuration(0);
     statsServiceRef.current.stopPolling();
     setQualityMetrics(null);
 
@@ -350,22 +393,26 @@ export function useWebRTC() {
     // Close WebSocket
     signaling.disconnect();
 
-    // Reset references and states
+    // Reset references
     isInitiatorRef.current = false;
-    roomIdRef.current = null;
     clientIdRef.current = null;
     peerIdRef.current = null;
     iceRestartCountRef.current = 0;
 
     setMediaControls({ isAudioMuted: false, isVideoDisabled: false });
-    updateState('idle');
-  }, [remoteStream, signaling, updateState]);
+    if (toEndedState) {
+      updateState('ended');
+    } else {
+      updateState('idle');
+    }
+  }, [callDuration, remoteStream, signaling, stopDurationTimer, updateState]);
 
   // Join Call Flow
   const joinCall = useCallback(
     async (roomId: string, displayName?: string, customServerUrl?: string) => {
       setMediaError(null);
       roomIdRef.current = roomId;
+      displayNameRef.current = displayName || 'Anonymous';
 
       // 1. Acquire Camera & Microphone
       const stream = await acquireLocalMedia();
@@ -404,6 +451,11 @@ export function useWebRTC() {
     setMediaError(null);
   }, []);
 
+  const resetToHome = useCallback(() => {
+    cleanupCall(false);
+    updateState('idle');
+  }, [cleanupCall, updateState]);
+
   return {
     connectionState,
     statusMessage,
@@ -412,11 +464,17 @@ export function useWebRTC() {
     mediaError,
     mediaControls,
     qualityMetrics,
+    callDuration,
+    lastCallDuration,
+    roomId: roomIdRef.current || 'reneo-room-001',
+    displayName: displayNameRef.current,
     signalingStatus: signaling.status,
     joinCall,
-    hangUp: cleanupCall,
+    hangUp: () => cleanupCall(true),
+    resetToHome,
     toggleAudio,
     toggleVideo,
     clearError,
+    acquireLocalMedia,
   };
 }
