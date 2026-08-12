@@ -15,7 +15,7 @@ interface VideoGridProps {
   onRemoteVideoElementRef?: (el: HTMLVideoElement | null) => void;
 }
 
-export const VideoGrid: React.FC<VideoGridProps> = ({
+const VideoGridComponent: React.FC<VideoGridProps> = ({
   localStream,
   remoteStream,
   connectionState,
@@ -30,19 +30,42 @@ export const VideoGrid: React.FC<VideoGridProps> = ({
   const remoteVideoRef = useRef<HTMLVideoElement | null>(null);
   const [copied, setCopied] = React.useState(false);
 
-  // Attach local stream to local video element
+  // 1. Attach local stream safely WITHOUT unnecessary srcObject reassignment
   useEffect(() => {
-    if (localVideoRef.current) {
-      localVideoRef.current.srcObject = localStream;
+    const videoEl = localVideoRef.current;
+    if (!videoEl) return;
+
+    if (videoEl.srcObject !== localStream) {
+      videoEl.srcObject = localStream;
+      if (localStream) {
+        videoEl.play().catch((err: unknown) => {
+          const error = err as { name?: string };
+          if (error.name !== 'AbortError' && error.name !== 'NotAllowedError') {
+            console.warn('[VideoGrid] Local video play error:', err);
+          }
+        });
+      }
     }
   }, [localStream]);
 
-  // Attach remote stream to remote video element
+  // 2. Attach remote stream safely WITHOUT unnecessary srcObject reassignment
   useEffect(() => {
-    if (remoteVideoRef.current) {
-      remoteVideoRef.current.srcObject = remoteStream;
-      if (onRemoteVideoElementRef) {
-        onRemoteVideoElementRef(remoteVideoRef.current);
+    const videoEl = remoteVideoRef.current;
+    if (!videoEl) return;
+
+    if (onRemoteVideoElementRef) {
+      onRemoteVideoElementRef(videoEl);
+    }
+
+    if (videoEl.srcObject !== remoteStream) {
+      videoEl.srcObject = remoteStream;
+      if (remoteStream) {
+        videoEl.play().catch((err: unknown) => {
+          const error = err as { name?: string };
+          if (error.name !== 'AbortError' && error.name !== 'NotAllowedError') {
+            console.warn('[VideoGrid] Remote video play error:', err);
+          }
+        });
       }
     }
   }, [remoteStream, onRemoteVideoElementRef]);
@@ -55,24 +78,23 @@ export const VideoGrid: React.FC<VideoGridProps> = ({
   };
 
   const isConnected = connectionState === 'connected';
+  const showRemoteEmptyOverlay = !remoteStream || !isConnected;
+  const showLocalDisabledOverlay = isVideoDisabled && !isScreenSharing;
 
   return (
     <div className="video-stage">
-      {/* Remote Video Primary Surface */}
+      {/* Primary Surface: Remote Video Tile */}
       <div className="remote-video-container">
-        {remoteStream && isConnected ? (
-          <video
-            ref={(el) => {
-              remoteVideoRef.current = el;
-              if (onRemoteVideoElementRef) {
-                onRemoteVideoElementRef(el);
-              }
-            }}
-            autoPlay
-            playsInline
-            className="remote-video-element"
-          />
-        ) : (
+        {/* CRITICAL STABILITY RULE: <video> element is PERMANENTLY MOUNTED in the DOM */}
+        <video
+          ref={remoteVideoRef}
+          autoPlay
+          playsInline
+          className={`remote-video-element ${showRemoteEmptyOverlay ? 'video-hidden' : ''}`}
+        />
+
+        {/* Persistent Overlay for Waiting / Connecting / Empty State */}
+        {showRemoteEmptyOverlay && (
           <div className="remote-empty-state">
             <div className="avatar-circle">{getInitials('Peer B')}</div>
             <h3 className="empty-title">
@@ -103,7 +125,7 @@ export const VideoGrid: React.FC<VideoGridProps> = ({
           </div>
         )}
 
-        {/* Remote Overlay Information */}
+        {/* Remote Participant Status Overlay */}
         <div className="remote-overlay">
           <div className="overlay-pill">
             <span className={`status-dot-sm ${isConnected ? 'dot-online' : 'dot-waiting'}`} />
@@ -114,34 +136,35 @@ export const VideoGrid: React.FC<VideoGridProps> = ({
         </div>
       </div>
 
-      {/* Floating Picture-in-Picture Local Video Card */}
+      {/* Floating Picture-in-Picture Local Video Surface */}
       <div className="local-pip-card">
-        {localStream ? (
-          <>
-            <video
-              ref={localVideoRef}
-              autoPlay
-              muted
-              playsInline
-              className={`local-video-element ${isVideoDisabled && !isScreenSharing ? 'hidden' : ''}`}
-            />
-            {isVideoDisabled && !isScreenSharing && (
-              <div className="local-disabled-placeholder">
+        {/* CRITICAL STABILITY RULE: Local <video> element is PERMANENTLY MOUNTED */}
+        <video
+          ref={localVideoRef}
+          autoPlay
+          muted
+          playsInline
+          className={`local-video-element ${showLocalDisabledOverlay || !localStream ? 'video-hidden' : ''}`}
+        />
+
+        {/* Persistent Camera Off / Offline Overlay */}
+        {(showLocalDisabledOverlay || !localStream) && (
+          <div className="local-disabled-placeholder">
+            {localStream ? (
+              <>
                 <div className="avatar-sm">{getInitials(displayName)}</div>
                 <div className="disabled-text-row">
                   <VideoOff size={14} className="text-danger" />
                   <span>Camera off</span>
                 </div>
-              </div>
+              </>
+            ) : (
+              <span className="placeholder-sub">Camera Offline</span>
             )}
-          </>
-        ) : (
-          <div className="local-disabled-placeholder">
-            <span className="placeholder-sub">Camera Offline</span>
           </div>
         )}
 
-        {/* Local Card Overlay Badge */}
+        {/* Local Card Overlay Information */}
         <div className="pip-overlay">
           <span className="pip-name">{displayName || 'You'}</span>
           <div className="pip-status-icons">
@@ -158,3 +181,20 @@ export const VideoGrid: React.FC<VideoGridProps> = ({
     </div>
   );
 };
+
+/**
+ * Custom React.memo comparator ensuring VideoGrid re-renders ONLY when media streams or UI states change,
+ * completely isolating video stage rendering from 1000ms telemetry/getStats updates.
+ */
+export const VideoGrid = React.memo(VideoGridComponent, (prevProps, nextProps) => {
+  return (
+    prevProps.localStream === nextProps.localStream &&
+    prevProps.remoteStream === nextProps.remoteStream &&
+    prevProps.connectionState === nextProps.connectionState &&
+    prevProps.isVideoDisabled === nextProps.isVideoDisabled &&
+    prevProps.isAudioMuted === nextProps.isAudioMuted &&
+    prevProps.isScreenSharing === nextProps.isScreenSharing &&
+    prevProps.roomId === nextProps.roomId &&
+    prevProps.displayName === nextProps.displayName
+  );
+});

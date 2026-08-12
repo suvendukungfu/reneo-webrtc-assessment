@@ -87,14 +87,18 @@ export class DeviceManager {
     }
   }
 
+  private activeMicRequestId: number = 0;
+  private activeCameraRequestId: number = 0;
+
   /**
    * Switches active microphone device without tearing down RTCPeerConnection
    */
   public async switchMicrophone(deviceId: string): Promise<boolean> {
-    if (this.isSwitchingState || deviceId === this.selectedDevices.audioInputId) {
+    if (deviceId === this.selectedDevices.audioInputId) {
       return true;
     }
 
+    const currentRequestId = ++this.activeMicRequestId;
     this.isSwitchingState = true;
     this.callbacks.onDeviceSwitchState(true, 'Switching microphone...');
 
@@ -110,6 +114,13 @@ export class DeviceManager {
       const newTrack = newStream.getAudioTracks()[0];
       if (!newTrack) {
         throw new Error('Could not acquire new audio track.');
+      }
+
+      // Race condition check: If a newer request was initiated while waiting for getUserMedia
+      if (currentRequestId !== this.activeMicRequestId) {
+        console.warn('[DeviceManager] Obsolete microphone switch discarded:', currentRequestId);
+        newTrack.stop();
+        return false;
       }
 
       // Preserve audio muted state
@@ -128,10 +139,10 @@ export class DeviceManager {
       this.isSwitchingState = false;
       return true;
     } catch (err: unknown) {
+      if (currentRequestId !== this.activeMicRequestId) return false;
       console.error('[DeviceManager] Error switching microphone:', err);
       const errorObj = err instanceof Error ? err : new Error(String(err));
 
-      // Keep existing track active on failure
       this.callbacks.onError(
         'Microphone Switch Failed',
         `Could not switch to selected microphone: ${errorObj.message}`
@@ -147,10 +158,11 @@ export class DeviceManager {
    * Switches active camera device without tearing down RTCPeerConnection
    */
   public async switchCamera(deviceId: string, isScreenSharing: boolean = false): Promise<boolean> {
-    if (this.isSwitchingState || deviceId === this.selectedDevices.videoInputId) {
+    if (deviceId === this.selectedDevices.videoInputId) {
       return true;
     }
 
+    const currentRequestId = ++this.activeCameraRequestId;
     this.isSwitchingState = true;
     this.callbacks.onDeviceSwitchState(true, 'Switching camera...');
 
@@ -158,18 +170,34 @@ export class DeviceManager {
 
     try {
       // 1. Acquire new camera track FIRST before stopping old track
-      const newStream = await navigator.mediaDevices.getUserMedia({
-        video: {
-          deviceId: { exact: deviceId },
-          width: { ideal: 1280 },
-          height: { ideal: 720 },
-        },
-        audio: false,
-      });
+      let newStream: MediaStream;
+      try {
+        newStream = await navigator.mediaDevices.getUserMedia({
+          video: {
+            deviceId: { exact: deviceId },
+            width: { ideal: 1280 },
+            height: { ideal: 720 },
+          },
+          audio: false,
+        });
+      } catch {
+        // Fallback for mobile cameras
+        newStream = await navigator.mediaDevices.getUserMedia({
+          video: { deviceId: { exact: deviceId } },
+          audio: false,
+        });
+      }
 
       const newTrack = newStream.getVideoTracks()[0];
       if (!newTrack) {
         throw new Error('Could not acquire new video track.');
+      }
+
+      // Race condition check: Discard stale request if a newer camera switch was triggered
+      if (currentRequestId !== this.activeCameraRequestId) {
+        console.warn('[DeviceManager] Obsolete camera switch discarded:', currentRequestId);
+        newTrack.stop();
+        return false;
       }
 
       // Preserve video disabled state
@@ -190,6 +218,7 @@ export class DeviceManager {
       this.isSwitchingState = false;
       return true;
     } catch (err: unknown) {
+      if (currentRequestId !== this.activeCameraRequestId) return false;
       console.error('[DeviceManager] Error switching camera:', err);
       const errorObj = err instanceof Error ? err : new Error(String(err));
 

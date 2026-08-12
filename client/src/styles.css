@@ -419,6 +419,12 @@ html, body {
   width: 100%;
   height: 100%;
   object-fit: cover;
+  transition: opacity 150ms ease;
+}
+
+.video-hidden {
+  opacity: 0;
+  pointer-events: none;
 }
 
 .remote-empty-state {

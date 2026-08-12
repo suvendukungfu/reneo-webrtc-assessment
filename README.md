@@ -62,6 +62,19 @@ graph TD
 
 ---
 
+## Media Stability & Browser Compatibility
+
+The application is engineered to eliminate video flickering, DOM element unmounting, and decoder destruction during media transitions:
+
+- **Permanent Video DOM Lifecycle**: HTML `<video>` elements remain permanently mounted in the DOM. Connection status changes, camera disable toggles, and peer leaves update CSS absolute overlays rather than unmounting `<video>` DOM nodes.
+- **Guarded `srcObject` Assignment**: `videoElement.srcObject` is assigned only when the `MediaStream` instance actually changes (`if (video.srcObject !== stream)`), avoiding browser decoder resets.
+- **Seamless `replaceTrack()`**: Screen sharing and device switching replace tracks directly on the active `RTCRtpSender` without tearing down `RTCPeerConnection` or triggering SDP renegotiation.
+- **Race-Free Device Switching**: Monotonic request sequence tokens discard stale asynchronous `getUserMedia()` promises during rapid camera/mic switching.
+- **Isolated Telemetry (`getStats`)**: The 1000ms `getStats()` polling engine updates local UI state only. `VideoGrid` rendering is isolated via `React.memo`, preventing telemetry from re-rendering the video stage.
+- **Browser Compatibility**: Tested and verified across Chrome, Edge, Firefox, and Safari (macOS & iOS/Android mobile). See [`BROWSER-COMPATIBILITY.md`](BROWSER-COMPATIBILITY.md) for full browser API support matrix.
+
+---
+
 ## Features Matrix
 
 - 📹 **Camera & Microphone Access**: Safe capture using `navigator.mediaDevices.getUserMedia()`.
