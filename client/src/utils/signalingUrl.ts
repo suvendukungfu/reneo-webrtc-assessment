@@ -9,12 +9,12 @@ export function getInitialSignalingUrl(): string {
 
     const hostname = window.location.hostname;
     // 2. If running locally on localhost / 127.0.0.1
-    if (hostname === 'localhost' || hostname === '127.0.0.1' || !hostname) {
-      return `ws://${hostname || 'localhost'}:8080`;
+    if (hostname === 'localhost' || hostname === '127.0.0.1') {
+      return `ws://${hostname}:8080`;
     }
   }
 
   // 3. Deployed on remote host (Vercel / Cloud CDN):
-  // Default to ws://localhost:8080 for testing local signaling server
-  return 'ws://localhost:8080';
+  // Default to live secure WebSocket signaling server so cross-device and mobile users connect instantly!
+  return 'wss://reneo-webrtc-signaling.loca.lt';
 }
