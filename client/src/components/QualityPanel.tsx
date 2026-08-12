@@ -1,10 +1,11 @@
 import React from 'react';
-import type { QualityMetrics } from '../types/stats.js';
-import { getMetricQuality } from '../utils/quality.js';
-import { Activity, Info } from 'lucide-react';
+import type { QualityMetrics, QualityAssessment, QualityHistorySample } from '../types/stats.js';
+import { Activity, Info, X } from 'lucide-react';
 
 interface QualityPanelProps {
   metrics: QualityMetrics | null;
+  assessment?: QualityAssessment;
+  history?: QualityHistorySample[];
   isConnected: boolean;
   isOpen: boolean;
   isTechOpen: boolean;
@@ -13,9 +14,12 @@ interface QualityPanelProps {
 
 export const QualityPanel: React.FC<QualityPanelProps> = ({
   metrics,
+  assessment,
+  history = [],
   isConnected,
   isOpen,
   isTechOpen,
+  onClose,
 }) => {
   if (!isOpen && !isTechOpen) {
     return null;
@@ -29,81 +33,80 @@ export const QualityPanel: React.FC<QualityPanelProps> = ({
     return `${kbps} kbps`;
   };
 
-  const rttQuality = getMetricQuality('rtt', metrics?.rttMs ?? null);
-  const bitrateQuality = getMetricQuality('bitrate', metrics?.inboundBitrateKbps ?? null);
-  const lostQuality = getMetricQuality('packetsLost', metrics?.packetsLost ?? null);
-  const fpsQuality = getMetricQuality('fps', metrics?.fps ?? null);
-  const jitterQuality = getMetricQuality('jitter', metrics?.jitterMs ?? null);
-
   const rttText = metrics?.rttMs !== null && metrics?.rttMs !== undefined ? `${metrics.rttMs} ms` : '—';
-  const lostText = metrics?.packetsLost !== null && metrics?.packetsLost !== undefined ? metrics.packetsLost.toLocaleString() : '—';
+  const lossText =
+    metrics?.packetLossPercent !== null && metrics?.packetLossPercent !== undefined
+      ? `${metrics.packetLossPercent}% (${metrics.packetsLost ?? 0} lost)`
+      : '—';
   const jitterText = metrics?.jitterMs !== null && metrics?.jitterMs !== undefined ? `${metrics.jitterMs} ms` : '—';
-  const fpsText = metrics?.fps !== null && metrics?.fps !== undefined ? `${metrics.fps} fps` : '—';
+  const fpsText = metrics?.fps !== null && metrics?.fps !== undefined ? `${metrics.fps} FPS` : '—';
+  const resText = metrics?.resolution
+    ? `${metrics.resolution.width} × ${metrics.resolution.height}`
+    : '—';
+
+  const ratingLabel = assessment?.rating || 'Unavailable';
+  const ratingColor = assessment?.color || 'var(--text-muted)';
+  const summaryText = assessment?.summary || 'Collecting telemetry...';
 
   return (
-    <div className="quality-modal-overlay">
+    <div className="quality-modal-overlay" role="dialog" aria-label="Connection Quality & Diagnostics Panel">
       <div className="quality-panel-card">
+        {/* Modal Close Action */}
+        <div className="modal-header-bar">
+          <div className="modal-title-group">
+            <Activity size={16} className="text-accent" />
+            <h4>WebRTC Telemetry & Diagnostics</h4>
+          </div>
+          <button type="button" className="btn-icon-secondary" onClick={onClose} title="Close Diagnostics">
+            <X size={16} />
+          </button>
+        </div>
+
         {isOpen && (
           <div className="panel-section">
+            {/* Overall Rating Header */}
             <div className="panel-section-header">
-              <div className="section-title">
-                <Activity size={16} className="text-accent" />
-                <h4>Connection Quality (Part B3)</h4>
+              <div className="rating-badge-group">
+                <span className="rating-pill" style={{ backgroundColor: ratingColor }}>
+                  ● Quality: {ratingLabel}
+                </span>
+                <span className="summary-text">{summaryText}</span>
               </div>
               <span className="panel-notice-pill">
                 Connected does not necessarily mean good quality.
               </span>
             </div>
 
+            {/* Metrics Grid */}
             <div className="metrics-grid">
               {/* RTT */}
               <div className="metric-box">
                 <div className="box-header">
-                  <span className="box-label">Round-Trip Time</span>
-                  {metrics?.rttMs !== null && metrics?.rttMs !== undefined && (
-                    <span className={`quality-tag ${rttQuality.cssClass}`}>
-                      {rttQuality.rating}
-                    </span>
-                  )}
+                  <span className="box-label">Round-Trip Time (RTT)</span>
                 </div>
                 <span className="box-value">{rttText}</span>
               </div>
 
-              {/* Bitrate */}
+              {/* Inbound Bitrate */}
               <div className="metric-box">
                 <div className="box-header">
                   <span className="box-label">Inbound Bitrate</span>
-                  {metrics?.inboundBitrateKbps !== null && metrics?.inboundBitrateKbps !== undefined && (
-                    <span className={`quality-tag ${bitrateQuality.cssClass}`}>
-                      {bitrateQuality.rating}
-                    </span>
-                  )}
                 </div>
                 <span className="box-value">{formatBitrate(metrics?.inboundBitrateKbps ?? null)}</span>
               </div>
 
-              {/* Packets Lost */}
+              {/* Packet Loss */}
               <div className="metric-box">
                 <div className="box-header">
-                  <span className="box-label">Packets Lost</span>
-                  {metrics?.packetsLost !== null && metrics?.packetsLost !== undefined && (
-                    <span className={`quality-tag ${lostQuality.cssClass}`}>
-                      {lostQuality.rating}
-                    </span>
-                  )}
+                  <span className="box-label">Packet Loss</span>
                 </div>
-                <span className="box-value">{lostText}</span>
+                <span className="box-value">{lossText}</span>
               </div>
 
               {/* Jitter */}
               <div className="metric-box">
                 <div className="box-header">
                   <span className="box-label">Jitter</span>
-                  {metrics?.jitterMs !== null && metrics?.jitterMs !== undefined && (
-                    <span className={`quality-tag ${jitterQuality.cssClass}`}>
-                      {jitterQuality.rating}
-                    </span>
-                  )}
                 </div>
                 <span className="box-value">{jitterText}</span>
               </div>
@@ -111,28 +114,40 @@ export const QualityPanel: React.FC<QualityPanelProps> = ({
               {/* Resolution */}
               <div className="metric-box">
                 <div className="box-header">
-                  <span className="box-label">Resolution</span>
+                  <span className="box-label">Video Resolution</span>
                 </div>
-                <span className="box-value">
-                  {metrics?.resolution
-                    ? `${metrics.resolution.width} × ${metrics.resolution.height}`
-                    : '—'}
-                </span>
+                <span className="box-value">{resText}</span>
               </div>
 
               {/* FPS */}
               <div className="metric-box">
                 <div className="box-header">
                   <span className="box-label">Frame Rate</span>
-                  {metrics?.fps !== null && metrics?.fps !== undefined && (
-                    <span className={`quality-tag ${fpsQuality.cssClass}`}>
-                      {fpsQuality.rating}
-                    </span>
-                  )}
                 </div>
                 <span className="box-value">{fpsText}</span>
               </div>
             </div>
+
+            {/* Micro rolling trend bars (last 30 samples) */}
+            {history.length > 1 && (
+              <div className="history-trend-section">
+                <span className="trend-label">Rolling Bitrate Trend (Last {history.length}s)</span>
+                <div className="trend-bar-chart">
+                  {history.map((sample, idx) => {
+                    const kbps = sample.bitrateKbps || 0;
+                    const heightPercent = Math.min(100, Math.max(10, (kbps / 2500) * 100));
+                    return (
+                      <div
+                        key={idx}
+                        className="trend-bar"
+                        style={{ height: `${heightPercent}%` }}
+                        title={`${sample.bitrateKbps || 0} kbps @ ${new Date(sample.timestamp).toLocaleTimeString()}`}
+                      />
+                    );
+                  })}
+                </div>
+              </div>
+            )}
           </div>
         )}
 
@@ -148,7 +163,7 @@ export const QualityPanel: React.FC<QualityPanelProps> = ({
             <div className="tech-details-list">
               <div className="tech-row">
                 <span className="tech-label">Signaling</span>
-                <span className="tech-val val-success">Connected (WebSocket)</span>
+                <span className="tech-val val-success">Connected (WebSocket ws://localhost:8080)</span>
               </div>
               <div className="tech-row">
                 <span className="tech-label">ICE Transport</span>
@@ -164,7 +179,7 @@ export const QualityPanel: React.FC<QualityPanelProps> = ({
               </div>
               <div className="tech-row">
                 <span className="tech-label">STUN Server</span>
-                <span className="tech-val val-info">Configured (Google STUN)</span>
+                <span className="tech-val val-info">Configured (stun:stun.l.google.com:19302)</span>
               </div>
               <div className="tech-row">
                 <span className="tech-label">TURN Server</span>

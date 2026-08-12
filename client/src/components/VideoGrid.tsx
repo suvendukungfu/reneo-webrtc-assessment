@@ -1,7 +1,7 @@
 import React, { useRef, useEffect } from 'react';
 import type { AppConnectionState } from '../types/webrtc.js';
 import { getInitials } from '../utils/formatters.js';
-import { Mic, MicOff, VideoOff, Copy, Check } from 'lucide-react';
+import { Mic, MicOff, VideoOff, Copy, Check, Monitor } from 'lucide-react';
 
 interface VideoGridProps {
   localStream: MediaStream | null;
@@ -9,8 +9,10 @@ interface VideoGridProps {
   connectionState: AppConnectionState;
   isVideoDisabled: boolean;
   isAudioMuted: boolean;
+  isScreenSharing?: boolean;
   roomId: string;
   displayName: string;
+  onRemoteVideoElementRef?: (el: HTMLVideoElement | null) => void;
 }
 
 export const VideoGrid: React.FC<VideoGridProps> = ({
@@ -19,8 +21,10 @@ export const VideoGrid: React.FC<VideoGridProps> = ({
   connectionState,
   isVideoDisabled,
   isAudioMuted,
+  isScreenSharing = false,
   roomId,
   displayName,
+  onRemoteVideoElementRef,
 }) => {
   const localVideoRef = useRef<HTMLVideoElement | null>(null);
   const remoteVideoRef = useRef<HTMLVideoElement | null>(null);
@@ -37,8 +41,11 @@ export const VideoGrid: React.FC<VideoGridProps> = ({
   useEffect(() => {
     if (remoteVideoRef.current) {
       remoteVideoRef.current.srcObject = remoteStream;
+      if (onRemoteVideoElementRef) {
+        onRemoteVideoElementRef(remoteVideoRef.current);
+      }
     }
-  }, [remoteStream]);
+  }, [remoteStream, onRemoteVideoElementRef]);
 
   const handleCopyRoom = () => {
     navigator.clipboard.writeText(roomId).then(() => {
@@ -55,7 +62,12 @@ export const VideoGrid: React.FC<VideoGridProps> = ({
       <div className="remote-video-container">
         {remoteStream && isConnected ? (
           <video
-            ref={remoteVideoRef}
+            ref={(el) => {
+              remoteVideoRef.current = el;
+              if (onRemoteVideoElementRef) {
+                onRemoteVideoElementRef(el);
+              }
+            }}
             autoPlay
             playsInline
             className="remote-video-element"
@@ -111,9 +123,9 @@ export const VideoGrid: React.FC<VideoGridProps> = ({
               autoPlay
               muted
               playsInline
-              className={`local-video-element ${isVideoDisabled ? 'hidden' : ''}`}
+              className={`local-video-element ${isVideoDisabled && !isScreenSharing ? 'hidden' : ''}`}
             />
-            {isVideoDisabled && (
+            {isVideoDisabled && !isScreenSharing && (
               <div className="local-disabled-placeholder">
                 <div className="avatar-sm">{getInitials(displayName)}</div>
                 <div className="disabled-text-row">
@@ -133,12 +145,13 @@ export const VideoGrid: React.FC<VideoGridProps> = ({
         <div className="pip-overlay">
           <span className="pip-name">{displayName || 'You'}</span>
           <div className="pip-status-icons">
+            {isScreenSharing && <Monitor size={12} className="text-accent" />}
             {isAudioMuted ? (
               <MicOff size={12} className="text-danger" />
             ) : (
               <Mic size={12} className="text-success" />
             )}
-            {isVideoDisabled && <VideoOff size={12} className="text-danger" />}
+            {isVideoDisabled && !isScreenSharing && <VideoOff size={12} className="text-danger" />}
           </div>
         </div>
       </div>

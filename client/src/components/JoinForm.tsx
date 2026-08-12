@@ -1,14 +1,21 @@
 import React, { useState } from 'react';
+import { Copy, Check } from 'lucide-react';
 
 interface JoinFormProps {
   onJoin: (roomId: string, displayName: string, serverUrl: string) => void;
   isLoading: boolean;
+  signalingStatus?: 'disconnected' | 'connecting' | 'connected' | 'error';
 }
 
-export const JoinForm: React.FC<JoinFormProps> = ({ onJoin, isLoading }) => {
+export const JoinForm: React.FC<JoinFormProps> = ({
+  onJoin,
+  isLoading,
+  signalingStatus = 'disconnected',
+}) => {
   const [roomId, setRoomId] = useState('reneo-room-001');
   const [displayName, setDisplayName] = useState('Candidate User');
-  const [serverUrl, setServerUrl] = useState(`ws://${window.location.hostname}:8080`);
+  const [serverUrl, setServerUrl] = useState(`ws://${window.location.hostname || 'localhost'}:8080`);
+  const [copied, setCopied] = useState(false);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -16,16 +23,46 @@ export const JoinForm: React.FC<JoinFormProps> = ({ onJoin, isLoading }) => {
     onJoin(roomId.trim(), displayName.trim(), serverUrl.trim());
   };
 
+  const handleCopyRoom = () => {
+    if (!roomId) return;
+    navigator.clipboard.writeText(roomId).then(() => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    });
+  };
+
+  const isServerReady = signalingStatus === 'connected' || signalingStatus === 'disconnected';
+
   return (
     <div className="join-card">
-      <div className="card-header">
-        <h2>Join Video Room</h2>
-        <p>Enter a room ID to establish a 2-party WebRTC peer connection.</p>
-      </div>
-
       <form onSubmit={handleSubmit} className="join-form">
         <div className="form-group">
-          <label htmlFor="roomId">Room ID</label>
+          <label htmlFor="displayName">Display Name</label>
+          <input
+            id="displayName"
+            type="text"
+            value={displayName}
+            onChange={(e) => setDisplayName(e.target.value)}
+            placeholder="e.g. Alice"
+            maxLength={32}
+            disabled={isLoading}
+            required
+          />
+        </div>
+
+        <div className="form-group">
+          <div className="label-row">
+            <label htmlFor="roomId">Room ID</label>
+            <button
+              type="button"
+              className="btn-copy-sm"
+              onClick={handleCopyRoom}
+              title="Copy Room ID"
+            >
+              {copied ? <Check size={12} className="text-success" /> : <Copy size={12} />}
+              <span>{copied ? 'Copied' : 'Copy'}</span>
+            </button>
+          </div>
           <input
             id="roomId"
             type="text"
@@ -34,20 +71,6 @@ export const JoinForm: React.FC<JoinFormProps> = ({ onJoin, isLoading }) => {
             placeholder="e.g. reneo-room-001"
             required
             maxLength={64}
-            disabled={isLoading}
-          />
-          <small className="help-text">Share this room ID with the second participant.</small>
-        </div>
-
-        <div className="form-group">
-          <label htmlFor="displayName">Your Name</label>
-          <input
-            id="displayName"
-            type="text"
-            value={displayName}
-            onChange={(e) => setDisplayName(e.target.value)}
-            placeholder="e.g. Alice"
-            maxLength={32}
             disabled={isLoading}
           />
         </div>
@@ -65,16 +88,30 @@ export const JoinForm: React.FC<JoinFormProps> = ({ onJoin, isLoading }) => {
           />
         </div>
 
-        <button type="submit" className="btn btn-primary" disabled={isLoading || !roomId.trim()}>
+        <button
+          type="submit"
+          className="btn btn-primary btn-block btn-lg"
+          disabled={isLoading || !roomId.trim()}
+        >
           {isLoading ? (
             <>
-              <span className="spinner" /> Joining Room...
+              <span className="spinner" /> Joining Call...
             </>
           ) : (
-            'Join Room'
+            'Join Call'
           )}
         </button>
       </form>
+
+      {/* Live Server Indicator */}
+      <div className="server-status-bar">
+        <span
+          className={`status-dot ${isServerReady ? 'status-online' : 'status-offline'}`}
+        />
+        <span className="server-status-text">
+          {isServerReady ? 'Signaling server ready' : 'Signaling server unavailable'}
+        </span>
+      </div>
     </div>
   );
 };

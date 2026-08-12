@@ -1,11 +1,13 @@
 import React, { useState } from 'react';
 import { Video, Copy, Check, Clock } from 'lucide-react';
 import type { AppConnectionState } from '../types/webrtc.js';
+import { ConnectionStatus } from './ConnectionStatus.js';
 import { formatDuration } from '../utils/formatters.js';
 
 interface HeaderProps {
   roomId: string;
   connectionState: AppConnectionState;
+  statusMessage: string;
   callDuration: number;
   isCallActive: boolean;
 }
@@ -13,6 +15,7 @@ interface HeaderProps {
 export const Header: React.FC<HeaderProps> = ({
   roomId,
   connectionState,
+  statusMessage,
   callDuration,
   isCallActive,
 }) => {
@@ -24,29 +27,6 @@ export const Header: React.FC<HeaderProps> = ({
       setTimeout(() => setCopied(false), 2000);
     });
   };
-
-  const getStatusBadge = () => {
-    switch (connectionState) {
-      case 'connected':
-        return { text: 'Connected', dotClass: 'dot-success', icon: '●' };
-      case 'connecting':
-      case 'joining':
-        return { text: 'Connecting...', dotClass: 'dot-warning', icon: '◌' };
-      case 'waiting':
-        return { text: 'Waiting for Peer', dotClass: 'dot-warning', icon: '◌' };
-      case 'reconnecting':
-        return { text: 'Reconnecting...', dotClass: 'dot-orange', icon: '↻' };
-      case 'disconnected':
-        return { text: 'Disconnected', dotClass: 'dot-danger', icon: '!' };
-      case 'failed':
-        return { text: 'Connection Failed', dotClass: 'dot-danger', icon: '!' };
-      case 'idle':
-      default:
-        return { text: 'Ready', dotClass: 'dot-neutral', icon: '●' };
-    }
-  };
-
-  const status = getStatusBadge();
 
   return (
     <header className="app-topbar">
@@ -74,11 +54,8 @@ export const Header: React.FC<HeaderProps> = ({
             </button>
           </div>
 
-          {/* Connection Status Indicator */}
-          <div className="meta-item status-badge">
-            <span className={`status-icon-dot ${status.dotClass}`}>{status.icon}</span>
-            <span className="status-text">{status.text}</span>
-          </div>
+          {/* Connection Status Component */}
+          <ConnectionStatus state={connectionState} message={statusMessage} />
 
           {/* Call Duration Timer */}
           <div className="meta-item timer-badge">

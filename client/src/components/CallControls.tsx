@@ -1,13 +1,19 @@
 import React, { useState } from 'react';
-import { Mic, MicOff, Video, VideoOff, Activity, Info, PhoneOff } from 'lucide-react';
+import { Mic, MicOff, Video, VideoOff, Activity, Info, PhoneOff, Sliders } from 'lucide-react';
 import type { MediaControlsState } from '../types/webrtc.js';
+import type { ScreenShareState } from '../types/screenshare.js';
+import { ScreenShareControl } from './ScreenShareControl.js';
 
 interface CallControlsProps {
   controls: MediaControlsState;
+  screenShareState: ScreenShareState;
   isQualityOpen: boolean;
   isTechOpen: boolean;
+  isDevicesOpen: boolean;
   onToggleAudio: () => void;
   onToggleVideo: () => void;
+  onToggleScreenShare: () => void;
+  onToggleDevices: () => void;
   onToggleQuality: () => void;
   onToggleTech: () => void;
   onHangUp: () => void;
@@ -15,10 +21,14 @@ interface CallControlsProps {
 
 export const CallControls: React.FC<CallControlsProps> = ({
   controls,
+  screenShareState,
   isQualityOpen,
   isTechOpen,
+  isDevicesOpen,
   onToggleAudio,
   onToggleVideo,
+  onToggleScreenShare,
+  onToggleDevices,
   onToggleQuality,
   onToggleTech,
   onHangUp,
@@ -40,9 +50,9 @@ export const CallControls: React.FC<CallControlsProps> = ({
 
   return (
     <div className="controls-bar-container">
-      {/* Leave Call Confirmation Popup */}
+      {/* Leave Call Confirmation Popover */}
       {showConfirmLeave && (
-        <div className="confirm-leave-popover">
+        <div className="confirm-leave-popover" role="dialog" aria-label="Confirm Leave Call">
           <span className="confirm-text">Leave this call?</span>
           <div className="confirm-buttons">
             <button
@@ -86,13 +96,30 @@ export const CallControls: React.FC<CallControlsProps> = ({
           {controls.isVideoDisabled ? <VideoOff size={20} /> : <Video size={20} />}
         </button>
 
-        {/* Quality Panel Toggle */}
+        {/* B1 Screen Sharing Toggle */}
+        <ScreenShareControl
+          screenShareState={screenShareState}
+          onToggleScreenShare={onToggleScreenShare}
+        />
+
+        {/* B2 Media Devices Selector Toggle */}
+        <button
+          type="button"
+          className={`ctrl-icon-btn ${isDevicesOpen ? 'active-accent' : 'active-normal'}`}
+          onClick={onToggleDevices}
+          aria-label="Open device settings"
+          title="Select Microphone, Camera & Speaker (Enhancement B2)"
+        >
+          <Sliders size={20} />
+        </button>
+
+        {/* B3 Quality Panel Toggle (Selected Part B) */}
         <button
           type="button"
           className={`ctrl-icon-btn ${isQualityOpen ? 'active-accent' : 'active-normal'}`}
           onClick={onToggleQuality}
-          aria-label="Toggle connection quality panel"
-          title="Connection metrics (Part B3)"
+          aria-label="Open connection quality panel"
+          title="Connection metrics getStats (Selected Part B3)"
         >
           <Activity size={20} />
         </button>
@@ -102,8 +129,8 @@ export const CallControls: React.FC<CallControlsProps> = ({
           type="button"
           className={`ctrl-icon-btn ${isTechOpen ? 'active-accent' : 'active-normal'}`}
           onClick={onToggleTech}
-          aria-label="Toggle technical diagnostic details"
-          title="Technical architecture details"
+          aria-label="Open technical architecture details"
+          title="Technical WebRTC details"
         >
           <Info size={20} />
         </button>

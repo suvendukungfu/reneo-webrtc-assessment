@@ -1061,6 +1061,309 @@ html, body {
 }
 
 /* -------------------------------------------------------------------------- */
+/* Connection Banner (User-Facing State & Recovery Explanations)               */
+/* -------------------------------------------------------------------------- */
+.connection-banner {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.6rem 1.2rem;
+  margin: 0.5rem 1rem 0 1rem;
+  background: var(--bg-card);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  font-size: 0.85rem;
+  font-weight: 500;
+  color: var(--text-primary);
+  box-shadow: var(--shadow-sm);
+  animation: fadeIn 0.2s ease-in-out;
+}
+
+.connection-banner.banner-reconnecting {
+  border-color: var(--warning);
+  background: rgba(245, 158, 11, 0.08);
+}
+
+.connection-banner.banner-waiting,
+.connection-banner.banner-connecting,
+.connection-banner.banner-joining {
+  border-color: var(--warning);
+  background: rgba(245, 158, 11, 0.05);
+}
+
+.connection-banner.banner-failed,
+.connection-banner.banner-disconnected {
+  border-color: var(--danger);
+  background: rgba(239, 68, 68, 0.08);
+}
+
+.banner-dot {
+  font-size: 0.9rem;
+  line-height: 1;
+}
+
+.banner-message {
+  flex: 1;
+  letter-spacing: 0.01em;
+}
+
+/* -------------------------------------------------------------------------- */
+/* Screen Share Control & Status Banner                                       */
+/* -------------------------------------------------------------------------- */
+.screenshare-control-wrapper {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
+.btn-active-screenshare {
+  background-color: var(--accent);
+  color: #fff;
+  border-color: var(--accent);
+  box-shadow: 0 0 12px var(--accent-glow);
+}
+
+.screenshare-status-indicator {
+  position: absolute;
+  top: -42px;
+  left: 50%;
+  transform: translateX(-50%);
+  white-space: nowrap;
+  background: rgba(15, 23, 42, 0.9);
+  color: var(--accent);
+  border: 1px solid var(--accent);
+  padding: 0.3rem 0.8rem;
+  border-radius: var(--radius-full);
+  font-size: 0.75rem;
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  box-shadow: var(--shadow-md);
+  animation: fadeIn 0.2s ease-in-out;
+}
+
+.live-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background-color: var(--accent);
+  box-shadow: 0 0 8px var(--accent);
+  animation: pulse 1.5s infinite;
+}
+
+/* -------------------------------------------------------------------------- */
+/* Device Selector Overlay Modal                                              */
+/* -------------------------------------------------------------------------- */
+.device-panel-overlay {
+  position: fixed;
+  bottom: 85px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 440px;
+  max-width: 92vw;
+  z-index: 1000;
+  animation: slideUp 0.25s ease-out;
+}
+
+.device-panel-card {
+  background: var(--bg-card);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-lg);
+  padding: 1.25rem;
+  box-shadow: var(--shadow-xl);
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.panel-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+}
+
+.header-title-group h3 {
+  font-size: 1rem;
+  font-weight: 600;
+  color: var(--text-primary);
+  margin: 0;
+}
+
+.header-title-group p {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  margin: 0.2rem 0 0 0;
+}
+
+.header-actions {
+  display: flex;
+  gap: 0.4rem;
+}
+
+.btn-icon-secondary {
+  background: var(--bg-surface);
+  border: 1px solid var(--border-color);
+  color: var(--text-secondary);
+  border-radius: var(--radius-sm);
+  padding: 0.35rem;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: var(--transition-fast);
+}
+
+.btn-icon-secondary:hover {
+  background: var(--border-color);
+  color: var(--text-primary);
+}
+
+.device-error-banner {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  background: rgba(239, 68, 68, 0.1);
+  border: 1px solid var(--danger);
+  border-radius: var(--radius-sm);
+  padding: 0.5rem 0.75rem;
+  font-size: 0.75rem;
+  color: var(--danger);
+}
+
+.device-form-body {
+  display: flex;
+  flex-direction: column;
+  gap: 0.85rem;
+}
+
+.device-group {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.device-label {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: 0.8rem;
+  font-weight: 500;
+  color: var(--text-secondary);
+}
+
+.device-select {
+  background: var(--bg-surface);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-sm);
+  color: var(--text-primary);
+  padding: 0.5rem 0.75rem;
+  font-size: 0.85rem;
+  outline: none;
+  cursor: pointer;
+  transition: var(--transition-fast);
+}
+
+.device-select:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px var(--accent-glow);
+}
+
+.device-select:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.help-note {
+  font-size: 0.7rem;
+  color: var(--text-muted);
+}
+
+/* -------------------------------------------------------------------------- */
+/* Quality Rating & Micro Trend Chart                                         */
+/* -------------------------------------------------------------------------- */
+.modal-header-bar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 0.75rem;
+}
+
+.modal-title-group {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.modal-title-group h4 {
+  margin: 0;
+  font-size: 0.95rem;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.rating-badge-group {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+}
+
+.rating-pill {
+  padding: 0.25rem 0.6rem;
+  border-radius: var(--radius-full);
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: #fff;
+}
+
+.summary-text {
+  font-size: 0.8rem;
+  color: var(--text-secondary);
+}
+
+.history-trend-section {
+  margin-top: 1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+
+.trend-label {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  font-weight: 500;
+}
+
+.trend-bar-chart {
+  display: flex;
+  align-items: flex-end;
+  gap: 3px;
+  height: 36px;
+  background: var(--bg-surface);
+  border-radius: var(--radius-sm);
+  padding: 4px;
+  border: 1px solid var(--border-color);
+}
+
+.trend-bar {
+  flex: 1;
+  background-color: var(--accent);
+  border-radius: 1px;
+  min-height: 4px;
+  transition: height 0.2s ease;
+}
+
+.spin {
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+/* -------------------------------------------------------------------------- */
 /* Responsive Breakpoints (1440px, 1280px, 1024px, 768px, 390px, 375px)       */
 /* -------------------------------------------------------------------------- */
 
