@@ -312,8 +312,16 @@ export function useWebRTC() {
 
   // Request Local Media (Camera & Microphone)
   const acquireLocalMedia = useCallback(async (): Promise<MediaStream | null> => {
-    updateState('joining');
-    setMediaError(null);
+    if (!navigator?.mediaDevices?.getUserMedia) {
+      setMediaError({
+        type: 'PERMISSION_DENIED',
+        title: 'Browser Security Restriction (Insecure Context)',
+        message: 'Camera & microphone access requires HTTPS or localhost. Browsers block media APIs when accessed over plain HTTP IP addresses (e.g. http://192.168.1.100).',
+        details: 'Solution: Use an HTTPS tunnel (npx localtunnel --port 3000) or test on localhost.',
+      });
+      updateState('idle');
+      return null;
+    }
 
     try {
       const stream = await navigator.mediaDevices.getUserMedia({
