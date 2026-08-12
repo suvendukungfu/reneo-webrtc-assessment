@@ -21,6 +21,7 @@ export class WebRTCService {
   private remoteStream: MediaStream | null = null;
   private pendingIceCandidates: RTCIceCandidateInit[] = [];
   private callbacks: WebRTCServiceCallbacks;
+  private isHandlingFailure: boolean = false;
 
   constructor(callbacks: WebRTCServiceCallbacks) {
     this.callbacks = callbacks;
@@ -31,6 +32,7 @@ export class WebRTCService {
    */
   public initializeConnection(localStream?: MediaStream | null): RTCPeerConnection {
     this.close(); // Clean up existing connection if any
+    this.isHandlingFailure = false;
 
     const pc = new RTCPeerConnection(RTC_CONFIG);
     this.peerConnection = pc;
@@ -69,19 +71,23 @@ export class WebRTCService {
     };
 
     // Monitor Connection and ICE states
-    pc.onconnectionstatechange = () => {
-      this.callbacks.onConnectionStateChange(pc.connectionState, pc.iceConnectionState);
-      if (pc.connectionState === 'failed') {
+    const handleStateUpdate = () => {
+      if (!this.peerConnection) return;
+      const connState = this.peerConnection.connectionState;
+      const iceState = this.peerConnection.iceConnectionState;
+
+      this.callbacks.onConnectionStateChange(connState, iceState);
+
+      if ((connState === 'failed' || iceState === 'failed') && !this.isHandlingFailure) {
+        this.isHandlingFailure = true;
         this.callbacks.onIceFailureNeeded();
+      } else if (connState === 'connected' || iceState === 'connected') {
+        this.isHandlingFailure = false;
       }
     };
 
-    pc.oniceconnectionstatechange = () => {
-      this.callbacks.onConnectionStateChange(pc.connectionState, pc.iceConnectionState);
-      if (pc.iceConnectionState === 'failed') {
-        this.callbacks.onIceFailureNeeded();
-      }
-    };
+    pc.onconnectionstatechange = handleStateUpdate;
+    pc.oniceconnectionstatechange = handleStateUpdate;
 
     return pc;
   }
@@ -189,7 +195,7 @@ export class WebRTCService {
   }
 
   /**
-   * Closes the RTCPeerConnection and cleans up all state
+   * Closes the RTCPeerConnection and cleans up connection state
    */
   public close(): void {
     if (this.peerConnection) {
@@ -198,11 +204,8 @@ export class WebRTCService {
       this.peerConnection.onconnectionstatechange = null;
       this.peerConnection.oniceconnectionstatechange = null;
 
-      this.peerConnection.getSenders().forEach((sender) => {
-        try {
-          sender.track?.stop();
-        } catch {}
-      });
+      // Note: We do NOT call sender.track.stop() here. Local media stream tracks
+      // are managed by the caller (acquireLocalMedia / cleanupCall).
 
       this.peerConnection.close();
       this.peerConnection = null;
@@ -214,5 +217,6 @@ export class WebRTCService {
     }
 
     this.pendingIceCandidates = [];
+    this.isHandlingFailure = false;
   }
 }

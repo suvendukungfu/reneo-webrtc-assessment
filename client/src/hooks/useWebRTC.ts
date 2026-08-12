@@ -17,12 +17,13 @@ export function useWebRTC() {
   });
   const [qualityMetrics, setQualityMetrics] = useState<QualityMetrics | null>(null);
 
-  // References to maintain persistent state across callbacks
+  // Persistent References
   const isInitiatorRef = useRef<boolean>(false);
   const roomIdRef = useRef<string | null>(null);
   const clientIdRef = useRef<string | null>(null);
   const peerIdRef = useRef<string | null>(null);
   const iceRestartCountRef = useRef<number>(0);
+  const localStreamRef = useRef<MediaStream | null>(null);
   const maxIceRestarts = 2;
 
   const webrtcServiceRef = useRef<WebRTCService | null>(null);
@@ -63,51 +64,56 @@ export function useWebRTC() {
     }
   }, []);
 
+  const updateStateRef = useRef(updateState);
+  useEffect(() => {
+    updateStateRef.current = updateState;
+  }, [updateState]);
+
   // Set up signaling hooks with callbacks
   const signaling = useSignaling({
     onJoined: (payload) => {
       clientIdRef.current = payload.clientId;
       isInitiatorRef.current = payload.isInitiator;
       if (payload.isInitiator) {
-        updateState('waiting');
+        updateStateRef.current('waiting');
       }
     },
 
     onPeerJoined: async (payload) => {
       peerIdRef.current = payload.peerId;
-      updateState('connecting');
+      updateStateRef.current('connecting');
 
       // If we are the initiator (Participant A), create offer and send to Peer B
       if (isInitiatorRef.current && webrtcServiceRef.current) {
         try {
           const offer = await webrtcServiceRef.current.createOffer();
-          signaling.sendSignal({
+          sendSignalRef.current({
             type: 'OFFER',
             payload: { sdp: offer },
           });
         } catch (err) {
           console.error('[useWebRTC] Error creating offer:', err);
-          updateState('failed', 'Failed to create WebRTC offer.');
+          updateStateRef.current('failed', 'Failed to create WebRTC offer.');
         }
       }
     },
 
     onOffer: async (payload) => {
       peerIdRef.current = payload.senderId;
-      updateState('connecting');
+      updateStateRef.current('connecting');
 
       if (!webrtcServiceRef.current) return;
 
       try {
         await webrtcServiceRef.current.setRemoteDescription(payload.sdp);
         const answer = await webrtcServiceRef.current.createAnswer();
-        signaling.sendSignal({
+        sendSignalRef.current({
           type: 'ANSWER',
           payload: { sdp: answer },
         });
       } catch (err) {
         console.error('[useWebRTC] Error handling SDP offer:', err);
-        updateState('failed', 'Failed to handle remote offer.');
+        updateStateRef.current('failed', 'Failed to handle remote offer.');
       }
     },
 
@@ -118,7 +124,7 @@ export function useWebRTC() {
         await webrtcServiceRef.current.setRemoteDescription(payload.sdp);
       } catch (err) {
         console.error('[useWebRTC] Error handling SDP answer:', err);
-        updateState('failed', 'Failed to set remote description answer.');
+        updateStateRef.current('failed', 'Failed to set remote description answer.');
       }
     },
 
@@ -128,15 +134,22 @@ export function useWebRTC() {
       }
     },
 
-    onPeerLeft: () => {
+    onPeerLeft: (payload) => {
       peerIdRef.current = null;
       setRemoteStream(null);
       statsServiceRef.current.stopPolling();
       setQualityMetrics(null);
 
-      // Re-initialize peer connection for when a new peer joins
+      // Promote to initiator if remaining alone in room
+      if (payload.isInitiator !== undefined) {
+        isInitiatorRef.current = payload.isInitiator;
+      } else {
+        isInitiatorRef.current = true;
+      }
+
+      // Re-initialize peer connection with active local stream
       if (webrtcServiceRef.current) {
-        webrtcServiceRef.current.initializeConnection(localStream);
+        webrtcServiceRef.current.initializeConnection(localStreamRef.current);
       }
 
       setMediaError({
@@ -145,7 +158,7 @@ export function useWebRTC() {
         message: 'The other participant left the room.',
       });
 
-      updateState('waiting');
+      updateStateRef.current('waiting');
     },
 
     onRoomFull: (payload) => {
@@ -155,7 +168,7 @@ export function useWebRTC() {
         message: payload.message,
       });
       cleanupCall();
-      updateState('idle');
+      updateStateRef.current('idle');
     },
 
     onError: (payload) => {
@@ -164,48 +177,57 @@ export function useWebRTC() {
         title: 'Signaling Error',
         message: payload.message,
       });
-      if (connectionState === 'connecting' || connectionState === 'joining') {
-        updateState('failed', payload.message);
-      }
     },
 
     onSignalingDisconnected: () => {
-      if (connectionState !== 'idle') {
-        updateState('disconnected');
-      }
+      updateStateRef.current('disconnected');
     },
   });
+
+  // Keep a stable ref to sendSignal to prevent effect re-subscriptions
+  const sendSignalRef = useRef(signaling.sendSignal);
+  useEffect(() => {
+    sendSignalRef.current = signaling.sendSignal;
+  }, [signaling.sendSignal]);
 
   // Handle ICE Failure and trigger bounded ICE Restart
   const handleIceFailure = useCallback(async () => {
     if (iceRestartCountRef.current >= maxIceRestarts) {
       console.warn('[useWebRTC] Maximum ICE restarts reached. Transitioning to failed state.');
-      updateState('failed', 'Connection failed after multiple recovery attempts.');
+      updateStateRef.current('failed', 'Connection failed after multiple recovery attempts.');
       return;
     }
 
     iceRestartCountRef.current += 1;
-    updateState('reconnecting', `Attempting ICE restart (${iceRestartCountRef.current}/${maxIceRestarts})...`);
+    updateStateRef.current(
+      'reconnecting',
+      `Attempting ICE restart (${iceRestartCountRef.current}/${maxIceRestarts})...`
+    );
 
     if (isInitiatorRef.current && webrtcServiceRef.current) {
       try {
         const offer = await webrtcServiceRef.current.restartIce();
-        signaling.sendSignal({
+        sendSignalRef.current({
           type: 'OFFER',
           payload: { sdp: offer },
         });
       } catch (err) {
         console.error('[useWebRTC] Error during ICE restart offer:', err);
-        updateState('failed', 'ICE restart failed.');
+        updateStateRef.current('failed', 'ICE restart failed.');
       }
     }
-  }, [signaling, updateState]);
+  }, []);
 
-  // Initialize WebRTCService instance
+  const handleIceFailureRef = useRef(handleIceFailure);
+  useEffect(() => {
+    handleIceFailureRef.current = handleIceFailure;
+  }, [handleIceFailure]);
+
+  // Stable initialization of WebRTCService instance (mount once)
   useEffect(() => {
     const service = new WebRTCService({
       onIceCandidate: (candidate) => {
-        signaling.sendSignal({
+        sendSignalRef.current({
           type: 'ICE_CANDIDATE',
           payload: { candidate },
         });
@@ -215,7 +237,7 @@ export function useWebRTC() {
       },
       onConnectionStateChange: (state, iceState) => {
         if (state === 'connected' || iceState === 'connected' || iceState === 'completed') {
-          updateState('connected');
+          updateStateRef.current('connected');
           iceRestartCountRef.current = 0; // Reset restart counter on clean connect
 
           // Start getStats observability polling
@@ -226,17 +248,17 @@ export function useWebRTC() {
             });
           }
         } else if (state === 'connecting' || iceState === 'checking') {
-          updateState('connecting');
+          updateStateRef.current('connecting');
         } else if (iceState === 'disconnected') {
-          updateState('reconnecting');
+          updateStateRef.current('reconnecting');
         } else if (state === 'failed' || iceState === 'failed') {
-          handleIceFailure();
+          handleIceFailureRef.current();
         } else if (state === 'closed' || iceState === 'closed') {
-          updateState('disconnected');
+          updateStateRef.current('disconnected');
         }
       },
       onIceFailureNeeded: () => {
-        handleIceFailure();
+        handleIceFailureRef.current();
       },
     });
 
@@ -246,7 +268,7 @@ export function useWebRTC() {
       service.close();
       statsServiceRef.current.stopPolling();
     };
-  }, [handleIceFailure, signaling, updateState]);
+  }, []); // Run ONCE on mount
 
   // Request Local Media (Camera & Microphone)
   const acquireLocalMedia = useCallback(async (): Promise<MediaStream | null> => {
@@ -263,6 +285,7 @@ export function useWebRTC() {
         audio: true,
       });
 
+      localStreamRef.current = stream;
       setLocalStream(stream);
       setMediaControls({ isAudioMuted: false, isVideoDisabled: false });
 
@@ -307,8 +330,9 @@ export function useWebRTC() {
     setQualityMetrics(null);
 
     // Stop local media tracks
-    if (localStream) {
-      localStream.getTracks().forEach((track) => track.stop());
+    if (localStreamRef.current) {
+      localStreamRef.current.getTracks().forEach((track) => track.stop());
+      localStreamRef.current = null;
       setLocalStream(null);
     }
 
@@ -335,7 +359,7 @@ export function useWebRTC() {
 
     setMediaControls({ isAudioMuted: false, isVideoDisabled: false });
     updateState('idle');
-  }, [localStream, remoteStream, signaling, updateState]);
+  }, [remoteStream, signaling, updateState]);
 
   // Join Call Flow
   const joinCall = useCallback(
@@ -348,7 +372,7 @@ export function useWebRTC() {
       if (!stream) return;
 
       // 2. Connect to WebSocket Signaling Server
-      const serverUrl = customServerUrl || `ws://${window.location.hostname}:8080`;
+      const serverUrl = customServerUrl || `ws://${window.location.hostname || 'localhost'}:8080`;
       signaling.connect(serverUrl, roomId, displayName);
     },
     [acquireLocalMedia, signaling]
@@ -356,23 +380,25 @@ export function useWebRTC() {
 
   // Mute / Unmute Audio (Toggle track.enabled without rebuilding connection)
   const toggleAudio = useCallback(() => {
-    if (!localStream) return;
-    const audioTrack = localStream.getAudioTracks()[0];
+    const stream = localStreamRef.current;
+    if (!stream) return;
+    const audioTrack = stream.getAudioTracks()[0];
     if (audioTrack) {
       audioTrack.enabled = !audioTrack.enabled;
       setMediaControls((prev) => ({ ...prev, isAudioMuted: !audioTrack.enabled }));
     }
-  }, [localStream]);
+  }, []);
 
   // Disable / Enable Video (Toggle track.enabled without rebuilding connection)
   const toggleVideo = useCallback(() => {
-    if (!localStream) return;
-    const videoTrack = localStream.getVideoTracks()[0];
+    const stream = localStreamRef.current;
+    if (!stream) return;
+    const videoTrack = stream.getVideoTracks()[0];
     if (videoTrack) {
       videoTrack.enabled = !videoTrack.enabled;
       setMediaControls((prev) => ({ ...prev, isVideoDisabled: !videoTrack.enabled }));
     }
-  }, [localStream]);
+  }, []);
 
   const clearError = useCallback(() => {
     setMediaError(null);

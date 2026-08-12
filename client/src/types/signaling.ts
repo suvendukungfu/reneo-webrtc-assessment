@@ -42,7 +42,7 @@ export type ClientSignalMessage =
 export type ServerSignalMessage =
   | { type: 'JOINED'; payload: { clientId: string; roomId: string; isInitiator: boolean } }
   | { type: 'PEER_JOINED'; payload: { peerId: string } }
-  | { type: 'PEER_LEFT'; payload: { peerId: string } }
+  | { type: 'PEER_LEFT'; payload: { peerId: string; isInitiator?: boolean } }
   | { type: 'OFFER'; payload: { sdp: RTCSessionDescriptionInit; senderId: string } }
   | { type: 'ANSWER'; payload: { sdp: RTCSessionDescriptionInit; senderId: string } }
   | { type: 'ICE_CANDIDATE'; payload: { candidate: RTCIceCandidateInit; senderId: string } }

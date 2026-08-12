@@ -103,7 +103,8 @@ export class RoomManager {
   }
 
   /**
-   * Removes a participant when they explicitly leave or disconnect
+   * Removes a participant when they explicitly leave or disconnect.
+   * Promotes remaining participant to initiator so next joining peer can negotiate cleanly.
    */
   public leaveRoom(socket: WebSocket): {
     leftParticipant: RoomParticipant | null;
@@ -129,8 +130,10 @@ export class RoomManager {
       return { leftParticipant: participant, remainingPeer: null, roomId };
     }
 
-    this.rooms.set(roomId, updatedParticipants);
+    // Promote remaining participant to initiator
     const remainingPeer = updatedParticipants[0];
+    remainingPeer.isInitiator = true;
+    this.rooms.set(roomId, [remainingPeer]);
 
     return { leftParticipant: participant, remainingPeer, roomId };
   }
@@ -156,7 +159,7 @@ export class RoomManager {
   }
 
   /**
-   * Returns active room metrics (useful for diagnostics)
+   * Returns active room metrics
    */
   public getStats() {
     return {

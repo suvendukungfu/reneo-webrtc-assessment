@@ -212,7 +212,10 @@ export class SignalingServer {
     if (leftParticipant && remainingPeer) {
       this.send(remainingPeer.socket, {
         type: 'PEER_LEFT',
-        payload: { peerId: leftParticipant.clientId },
+        payload: {
+          peerId: leftParticipant.clientId,
+          isInitiator: remainingPeer.isInitiator,
+        },
       });
     }
   }

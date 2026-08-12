@@ -6,7 +6,7 @@ export type SignalingStatus = 'disconnected' | 'connecting' | 'connected' | 'err
 export interface UseSignalingCallbacks {
   onJoined?: (payload: { clientId: string; roomId: string; isInitiator: boolean }) => void;
   onPeerJoined?: (payload: { peerId: string }) => void;
-  onPeerLeft?: (payload: { peerId: string }) => void;
+  onPeerLeft?: (payload: { peerId: string; isInitiator?: boolean }) => void;
   onOffer?: (payload: { sdp: RTCSessionDescriptionInit; senderId: string }) => void;
   onAnswer?: (payload: { sdp: RTCSessionDescriptionInit; senderId: string }) => void;
   onIceCandidate?: (payload: { candidate: RTCIceCandidateInit; senderId: string }) => void;

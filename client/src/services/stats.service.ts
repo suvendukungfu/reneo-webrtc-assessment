@@ -16,7 +16,11 @@ export class StatsService {
     this.stopPolling();
 
     this.timerId = window.setInterval(async () => {
-      if (pc.connectionState !== 'connected' && pc.iceConnectionState !== 'completed' && pc.iceConnectionState !== 'connected') {
+      if (
+        pc.connectionState !== 'connected' &&
+        pc.iceConnectionState !== 'completed' &&
+        pc.iceConnectionState !== 'connected'
+      ) {
         return;
       }
       try {
@@ -42,7 +46,7 @@ export class StatsService {
   }
 
   /**
-   * Parses RTCStatsReport into a clean QualityMetrics object
+   * Parses RTCStatsReport into a clean QualityMetrics object across Chrome, Firefox, and Safari
    */
   private extractMetrics(stats: RTCStatsReport): QualityMetrics {
     let rttMs: number | null = null;
@@ -55,15 +59,21 @@ export class StatsService {
     let timestamp = Date.now();
 
     stats.forEach((report) => {
-      // Extract candidate-pair RTT
-      if (report.type === 'candidate-pair' && report.state === 'succeeded') {
+      // Extract active candidate-pair RTT (compatible with Chrome, Firefox, Safari)
+      if (
+        report.type === 'candidate-pair' &&
+        (report.state === 'succeeded' || report.nominated === true || report.selected === true)
+      ) {
         if (typeof report.currentRoundTripTime === 'number') {
           rttMs = Math.round(report.currentRoundTripTime * 1000);
         }
       }
 
       // Extract video inbound-rtp metrics
-      if (report.type === 'inbound-rtp' && report.kind === 'video') {
+      if (
+        report.type === 'inbound-rtp' &&
+        (report.kind === 'video' || report.mediaType === 'video')
+      ) {
         timestamp = report.timestamp || Date.now();
 
         if (typeof report.packetsLost === 'number') {
