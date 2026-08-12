@@ -87,9 +87,14 @@ export const JoinForm: React.FC<JoinFormProps> = ({
             required
             disabled={isLoading}
           />
-          <small className="help-note" style={{ display: 'flex', alignItems: 'center', gap: '0.3rem', marginTop: '0.25rem' }}>
-            <Info size={12} />
-            Target local server (ws://localhost:8080) or hosted WebSocket endpoint.
+          <small className="help-note" style={{ display: 'flex', flexDirection: 'column', gap: '0.2rem', marginTop: '0.35rem', color: 'var(--text-muted)' }}>
+            <span style={{ display: 'flex', alignItems: 'center', gap: '0.3rem' }}>
+              <Info size={12} className="text-accent" />
+              Target local server (ws://localhost:8080) or hosted WebSocket endpoint.
+            </span>
+            <span style={{ fontSize: '0.72rem', color: 'var(--warning)', marginTop: '0.1rem' }}>
+              📱 Mobile browser? Enter your laptop's local LAN IP (e.g. <code>ws://192.168.x.x:8080</code>).
+            </span>
           </small>
         </div>
 

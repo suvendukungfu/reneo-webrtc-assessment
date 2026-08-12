@@ -94,6 +94,8 @@ html, body {
   display: flex;
   flex-direction: column;
   height: 100vh;
+  height: 100dvh;
+  min-height: -webkit-fill-available;
   width: 100vw;
   background-color: var(--bg);
 }

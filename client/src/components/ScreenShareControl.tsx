@@ -13,9 +13,16 @@ export const ScreenShareControl: React.FC<ScreenShareControlProps> = ({
   onToggleScreenShare,
   disabled = false,
 }) => {
+  const isSupported = typeof navigator !== 'undefined' && Boolean(navigator.mediaDevices?.getDisplayMedia);
   const isSharing = screenShareState.isSharing;
   const isStarting = screenShareState.status === 'starting';
   const isStopping = screenShareState.status === 'stopping';
+
+  const getTooltip = () => {
+    if (!isSupported) return 'Screen sharing is available on desktop browsers';
+    if (isSharing) return 'Stop Screen Sharing';
+    return 'Share Screen';
+  };
 
   return (
     <div className="screenshare-control-wrapper">
@@ -23,9 +30,9 @@ export const ScreenShareControl: React.FC<ScreenShareControlProps> = ({
         type="button"
         className={`ctrl-icon-btn ${isSharing ? 'btn-active-screenshare' : ''}`}
         onClick={onToggleScreenShare}
-        disabled={disabled || isStarting || isStopping}
-        title={isSharing ? 'Stop Screen Sharing' : 'Share Screen'}
-        aria-label={isSharing ? 'Stop screen sharing' : 'Share screen'}
+        disabled={disabled || !isSupported || isStarting || isStopping}
+        title={getTooltip()}
+        aria-label={getTooltip()}
       >
         {isStarting || isStopping ? (
           <span className="spinner-sm" />

@@ -22,7 +22,18 @@ export class MediaManager {
       audio: true,
     };
 
-    const stream = await navigator.mediaDevices.getUserMedia(constraints || defaultConstraints);
+    let stream: MediaStream;
+    try {
+      stream = await navigator.mediaDevices.getUserMedia(constraints || defaultConstraints);
+    } catch (err: unknown) {
+      const error = err as { name?: string };
+      if (error.name === 'OverconstrainedError' || error.name === 'ConstraintNotSatisfiedError') {
+        // Robust fallback for mobile devices that reject ideal resolution constraints
+        stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
+      } else {
+        throw err;
+      }
+    }
 
     this.localStream = stream;
     this.cameraTrack = stream.getVideoTracks()[0] || null;
