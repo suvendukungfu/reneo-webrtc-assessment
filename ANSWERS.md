@@ -1,239 +1,132 @@
-# Technical Assessment Answers — Part C
+# Reneo WebRTC Assessment — Part C
 
-This document contains in-depth, production-oriented answers to the four architectural questions specified in Part C of the Reneo WebRTC / Live Communications Assessment.
+This document answers the written architecture questions for the Reneo WebRTC assessment. The prototype itself is a two-party WebRTC call using native browser APIs, WebSocket signaling, STUN, ICE restart handling, `getStats()` telemetry, and additional media controls such as screen sharing and device switching. TURN, SFU infrastructure, CDN distribution, authentication, and production observability are discussed here as production recommendations, not as features implemented in this prototype.
 
----
+## C1. Why can WebRTC work locally but fail across different networks?
 
-## C1: Why WebRTC Works Locally but Fails Across Different Networks
+On the same local network, two browsers may be able to reach each other through local ICE candidates. For example, both devices might be on the same Wi-Fi network with private addresses like `192.168.x.x`, so media packets can take a simple local path.
 
-### 1. Network Address Translation (NAT) & Private IP Space
-During local testing (same Wi-Fi network, localhost, or LAN), both peers possess directly reachable IP addresses (e.g., `192.168.1.50` and `192.168.1.51`). Their WebRTC ICE (Interactive Connectivity Establishment) agents gather **Host Candidates** (`type host`), which contain local interface IP addresses. Direct socket binding succeeds immediately.
+```text
+Same network:
 
-In real-world cross-network environments (e.g., User A on home Wi-Fi behind ISP NAT and User B on mobile 5G behind Carrier-Grade NAT), peers operate in isolated private address spaces. Neither peer can directly reach the other's private IP (`192.168.x.x` or `10.x.x.x`).
-
-### 2. ICE Candidate Types
-An ICE agent gathers three primary candidate types:
-1. **Host (`host`)**: The local physical/virtual network interface IP and port.
-2. **Server Reflexive (`srflx`)**: The public IP address and port assigned by the NAT router, discovered via a **STUN** server.
-3. **Relay (`relay`)**: A public IP address and port allocated on a **TURN** relay server that proxies media between peers.
-
-### 3. Why STUN is Necessary but Insufficient
-A **STUN** (Session Traversal Utilities for NAT) server is a lightweight public server. When a client sends a binding request to STUN, the server responds with the client's public IP address and port as seen from the public internet.
-
-STUN works perfectly for permissive NAT types (Full Cone, Address-Restricted Cone, Port-Restricted Cone). However, **STUN fails completely when either peer is behind a Symmetric NAT**:
-- Under **Symmetric NAT**, the router assigns a unique public IP and port combination for *every distinct destination IP and port*.
-- When client A queries STUN, the NAT maps client A to `203.0.113.1:50001`.
-- However, when client A subsequently sends media packets to Client B (`198.51.100.5:60002`), the Symmetric NAT assigns a *different* external port (`203.0.113.1:50002`).
-- Client B attempts to send media to port `50001` (the STUN candidate), but Client A's NAT drops the incoming packets because no translation mapping exists for Client B's address on port `50001`.
-
-### 4. Firewalls & Port Blocking
-Corporate networks, public Wi-Fi hotspots, and strict firewalls frequently block outbound UDP traffic except on standard Web ports (80/443). Because native WebRTC media relies on UDP/RTP, firewall rules actively block UDP media packets, making direct P2P connections impossible without a media relay.
-
----
-
-## C2: What is TURN? (Traversal Using Relays around NAT)
-
-### 1. Purpose of TURN
-**TURN** is a protocol (RFC 5766) that provides a fallback server mechanism when direct P2P connection attempts fail. Instead of streaming audio/video directly between Client A and Client B, both clients establish encrypted TURN allocation sessions with a public relay server. Media flows: `Client A ──> TURN Server ──> Client B`.
-
-### 2. STUN vs TURN Comparison
-| Attribute | STUN | TURN |
-| :--- | :--- | :--- |
-| **Primary Function** | Discovers public IP/Port mapping | Relays raw media traffic |
-| **Server Bandwidth** | Minimal (tiny UDP ping/pong) | Heavy (full media stream relay) |
-| **Latency** | Direct P2P latency | Adds relay hop latency (+10–50ms) |
-| **Cost** | Negligible (cheap to host) | High (proportional to bandwidth) |
-| **Success Rate** | ~80–85% of connections | 100% fallback success rate |
-
-### 3. Production Deployment & Security Architecture
-In production systems, TURN servers must never be open relays. They are secured using **Short-Lived Ephemeral Credentials** (REST API Authentication mechanism):
-
-1. **Authentication Secret**: The application backend shares a long-lived secret key with the TURN server (e.g., Coturn).
-2. **Token Generation**: When an authenticated user joins a call, the backend computes a time-limited HMAC-SHA1 signature:
-   ```typescript
-   const unixTimestamp = Math.floor(Date.now() / 1000) + 3600; // Valid for 1 hour
-   const username = `${unixTimestamp}:${userId}`;
-   const credential = crypto.createHmac('sha1', turnSecret).update(username).digest('base64');
-   ```
-3. **ICE Config Delivery**: The client receives temporary TURN credentials in the `iceServers` array:
-   ```json
-   {
-     "urls": [
-       "turn:turn.example.com:3478?transport=udp",
-       "turns:turn.example.com:443?transport=tcp"
-     ],
-     "username": "1723456789:user-123",
-     "credential": "generated-hmac-hash"
-   }
-   ```
-
-### 4. Transport Fallback & Operational Monitoring
-- **UDP (Port 3478)**: Preferred low-latency transport.
-- **TCP (Port 3478)**: Fallback when UDP is blocked by network firewalls.
-- **TURNS / TLS (Port 443)**: Encrypted fallback over TCP port 443, masquerading as HTTPS traffic to pass through strict corporate proxies.
-
-**Operational Considerations**:
-- **Bandwidth Costs**: Egress traffic costs add up quickly. Monitored via metrics exporter (Prometheus/Grafana).
-- **Relay Capacity**: Coturn or specialized relays must be load-balanced across multiple cloud regions close to end users to minimize latency.
-
----
-
-## C3: Explain ICE Restart
-
-### 1. Concept and Mechanism
-An **ICE Restart** is a WebRTC mechanism used to recover a broken peer connection without tearing down the high-level `RTCPeerConnection` instance or recreating local `MediaStreamTrack` references.
-
-When an ICE restart occurs, the ICE agent resets its transport state, generates brand-new ICE credentials (`ice-ufrag` and `ice-pwd`), and initiates a fresh candidate gathering phase across all available network interfaces.
-
-### 2. Implementation in Native WebRTC
-The initiator triggers an ICE restart by passing `{ iceRestart: true }` to `createOffer()`:
-
-```typescript
-// 1. Initiator detects connection failure (connectionState === 'failed')
-const offer = await pc.createOffer({ iceRestart: true });
-
-// 2. Local description is updated with new ice-ufrag / ice-pwd
-await pc.setLocalDescription(offer);
-
-// 3. Offer is sent over WebSocket signaling server
-signaling.send({ type: 'OFFER', payload: { sdp: offer } });
-
-// 4. Remote peer receives offer, updates remote description, creates answer
-await remotePc.setRemoteDescription(offer);
-const answer = await remotePc.createAnswer();
-await remotePc.setLocalDescription(answer);
-signaling.send({ type: 'ANSWER', payload: { sdp: answer } });
-
-// 5. Original peer sets remote answer and new ICE candidate gathering completes
-await pc.setRemoteDescription(answer);
+Browser A
+   |
+   | local candidate
+   v
+Browser B
 ```
 
-### 3. Triggers for ICE Restart
-- **Network Interface Switching**: A mobile user walks out of range of Wi-Fi, causing the device to switch to cellular 5G (IP address change).
-- **Connection Failure**: `connectionState` or `iceConnectionState` enters `'failed'`.
-- **NAT Timeout**: A stateful NAT router drops idle UDP mapping entries after a period of inactivity.
+Across different networks, each browser is usually behind NAT, a firewall, or both. The private address that worked locally is not reachable from the public internet. WebRTC uses ICE to test possible candidate paths: local candidates, server-reflexive candidates discovered with STUN, and relay candidates from TURN if configured.
 
-### 4. Avoiding Infinite Restart Loops
-Disconnected state (`iceConnectionState === 'disconnected'`) can be temporary (e.g., brief packet loss or Wi-Fi jitter). Browsers often auto-recover from `disconnected` without intervention. 
+```text
+Different networks:
 
-**Best Practice**:
-- Do **not** trigger ICE restart immediately on `disconnected`. Wait a short grace period (3–5 seconds) or wait for explicit `failed` state.
-- Implement a **bounded retry counter** (`maxRestarts = 2`). If ICE restarts fail repeatedly, transition connection state to `failed` and prompt the user to manually retry or check network connectivity.
-
----
-
-## C4: Architecture for 10,000 Simultaneous Live-Shopping Viewers
-
-### 1. Core Problem Statement & Scalability Bottleneck
-In a P2P mesh WebRTC architecture, every participant sends their audio/video stream directly to every other participant.
-- For 2 participants: 1 upload stream, 1 download stream per user ($O(N)$).
-- For 10,000 P2P viewers: The host's browser would need to upload 10,000 distinct video streams simultaneously.
-  - At 2 Mbps per 720p stream, the seller would require an upload bandwidth of **20 Gbps**!
-  - No home, mobile, or office connection can support 20 Gbps upload. P2P collapses beyond 3–4 participants.
-
-### 2. Architecture Comparison: P2P vs SFU vs MCU vs Broadcast
-
-```
-               +-------------------------------------------------------+
-               |                    SELLER BROWSER                     |
-               +-------------------------------------------------------+
-                                           |
-                                           | WebRTC Ingest (1 Stream, ~3 Mbps)
-                                           v
-               +-------------------------------------------------------+
-               |           LOW-LATENCY MEDIA INGEST (SFU)              |
-               +-------------------------------------------------------+
-                                           |
-                    +----------------------+----------------------+
-                    |                                             |
-                    v                                             v
-   +---------------------------------+           +---------------------------------+
-   |    INTERACTIVE BUYERS PATH      |           |     BROADCAST MASS AUDIENCE     |
-   |      (WebRTC via SFU Cluster)   |           |    (LL-HLS / HLS via CDN)      |
-   +---------------------------------+           +---------------------------------+
-   | - Latency: < 500 ms             |           | - Latency: 2–4 seconds          |
-   | - Bidirectional audio/video     |           | - One-way scalable broadcast    |
-   | - Used by: Active Co-Hosts      |           | - Transcoded ABR Bitrate Ladder |
-   | - Target: ~1–50 buyers          |           | - Target: 10,000+ viewers       |
-   +---------------------------------+           +---------------------------------+
+Browser A
+   |
+   | NAT / Firewall
+   v
+Internet
+   |
+   | NAT / Firewall
+   v
+Browser B
 ```
 
-- **P2P (Peer-to-Peer)**: Unusable for 10,000 viewers due to seller bandwidth explosion.
-- **MCU (Multipoint Control Unit)**: Decodes, mixes all video feeds into a single composited video grid, and re-encodes. Requires massive server CPU power and introduces high encoding latency.
-- **SFU (Selective Forwarding Unit)**: Receives the seller's single stream and forwards raw RTP packets without re-encoding to multiple downstreams. Highly efficient, sub-500ms latency. However, serving 10,000 direct WebRTC downstreams from SFUs is expensive (~10,000 open UDP sockets, high egress server costs).
-- **Hybrid WebRTC + LL-HLS / HLS (Recommended Strategy)**:
-  - **Seller & Interactive Co-Hosts (0.1% of users)**: Connect via **WebRTC to SFU** for real-time sub-second interaction.
-  - **Passive Shopping Viewers (99.9% of users)**: Stream via **LL-HLS (Low-Latency HLS)** served through a global CDN.
+STUN helps a browser discover how it appears from the public internet, but it does not relay media. Some NAT and firewall combinations still prevent the two peers from sending UDP media directly to each other. That is why a call can pass during local testing and fail in real user networks unless TURN relay fallback is available.
 
----
+## C2. What is the role of TURN?
 
-### 3. Detailed Architecture Diagram (10,000 Viewers)
+TURN is a media relay. STUN helps discover connectivity information; TURN carries the actual audio and video when a direct peer-to-peer path cannot be established. In this prototype, TURN is not configured. The prototype uses public STUN only, which is fine for the assessment but not enough for production reliability.
 
-```
-[Seller Browser] 
-       │ 
-       │ WebRTC Upload (RTP/SAVPF, Opus/H.264, ~3 Mbps)
-       ▼
-┌────────────────────────────────────────────────────────────────────────┐
-│                        WEBRTC SFU INGEST NODE                          │
-│  - Receives live WebRTC stream                                         │
-│  - Forwards stream to Live Transcoder & Co-Hosts                       │
-└──────────────────┬─────────────────────────────────────┬───────────────┘
-                   │                                     │
-                   │ WebRTC Sub-second                   │ RTMP / SRT Internal Push
-                   ▼                                     ▼
-┌───────────────────────────────────┐   ┌───────────────────────────────────┐
-│     CO-HOSTS / VIP BUYERS         │   │     REAL-TIME MEDIA TRANSCODER    │
-│  - 2-way WebRTC interactive stream │   │  - Generates ABR Bitrate Ladder:  │
-│  - Latency: < 300ms               │   │    * 1080p @ 4.5 Mbps             │
-└───────────────────────────────────┘   │    * 720p  @ 2.2 Mbps             │
-                                        │    * 480p  @ 1.0 Mbps             │
-                                        │    * 360p  @ 500 kbps             │
-                                        │  - Packages into fMP4 segments    │
-                                        └──────────────────┬────────────────┘
-                                                           │
-                                                           │ LL-HLS / CMAF (1s Segments)
-                                                           ▼
-                                        ┌───────────────────────────────────┐
-                                        │      ORIGIN SHIELD SERVER         │
-                                        │  - Serves master m3u8 playlists   │
-                                        └──────────────────┬────────────────┘
-                                                           │
-                                                           │ HTTP GET (CMAF Chunks)
-                                                           ▼
-                                        ┌───────────────────────────────────┐
-                                        │   GLOBAL CDN EDGE NETWORK (Cloud) │
-                                        │  - Edge Caching (99.9% Cache Hit) │
-                                        │  - HTTP/3 & QUIC Transport        │
-                                        └──────────────────┬────────────────┘
-                                                           │
-                                                           │ HLS / LL-HLS Streams
-                                                           ▼
-                                        ┌───────────────────────────────────┐
-                                        │      10,000 SHOPPING VIEWERS      │
-                                        │  - iOS / Android / Desktop Web    │
-                                        │  - Adaptive Bitrate Auto-Switch   │
-                                        │  - Latency: 1.5 - 3.0 seconds     │
-                                        └───────────────────────────────────┘
+In production, I would deploy TURN servers in multiple regions close to users. Clients should try UDP first because it is usually the best transport for real-time media. When UDP is blocked, the ICE configuration should also offer TCP and TLS TURN fallback, commonly on ports that pass through restrictive networks.
+
+TURN must not be an open relay. I would issue short-lived TURN credentials from the application backend after the user is authenticated, using an expiring username and HMAC-style credential. I would also add rate limiting, per-user allocation limits, monitoring, bandwidth alerts, and abuse prevention so the relay cannot be used as free public infrastructure.
+
+The cost difference is simple: STUN is mostly discovery traffic, while TURN can carry the full media stream. TURN therefore adds bandwidth cost, egress cost, infrastructure cost, and operational complexity. TURN cost depends heavily on traffic volume, region, provider, and whether it is self-hosted or managed.
+
+## C3. How would you handle an ICE restart?
+
+An ICE restart asks the existing `RTCPeerConnection` to find a new network path without ending the call or reacquiring camera and microphone tracks. It creates new ICE credentials and gathers new candidates, then sends a new offer/answer exchange through the existing signaling channel.
+
+I would not restart ICE for every brief `disconnected` event. A short network drop, Wi-Fi jitter, or mobile packet loss may recover automatically. A better trigger is a persistent `failed` ICE state, or a disconnected state that lasts beyond a grace period. The prototype follows that general approach by treating `failed` as the restart trigger and bounding the number of restart attempts.
+
+```text
+Connection problem
+       |
+       v
+Check connection state
+       |
+       +---- recovers ----> Connected
+       |
+       +---- failed ------> ICE restart
+                              |
+                              v
+                         New offer
+                              |
+                              v
+                         New answer
+                              |
+                              v
+                        New ICE path
 ```
 
----
+In code, the initiator creates a new offer with:
 
-### 4. Technical Breakdown of Components
+```ts
+createOffer({ iceRestart: true })
+```
 
-#### A. Interactive vs Passive Path Trade-offs
-- **Interactive Co-Host Path (WebRTC)**: Sub-second latency (<300ms) allows real-time bidding, asking seller questions, or auction co-hosting.
-- **Passive Viewer Path (LL-HLS)**: Latency of 1.5–3.0 seconds is imperceptible for shopping viewers watching a live stream presentation, while reducing bandwidth costs by ~80% compared to native WebRTC egress.
+The flow is: create a new offer, set it as the local description, send it through WebSocket signaling, have the remote peer set it as the remote description, create and set an answer, return that answer, and then exchange new ICE candidates. I would add retry limits and backoff so two unstable clients do not create an infinite renegotiation loop.
 
-#### B. Media Processing & Transcoding
-- **Live Transcoder**: Converts seller's high-profile H.264/AV1 stream into multiple resolution profiles (Adaptive Bitrate Ladder: 1080p, 720p, 480p, 360p).
-- **CMAF / fMP4 Packaging**: Uses Common Media Application Format (CMAF) with 1-second segment sizes and partial chunk delivery (Chunked Transfer Encoding) to achieve low-latency HLS.
+## C4. Architecture for 10,000 Live Shopping Viewers
 
-#### C. CDN Edge Distribution
-- **Origin Shield**: Shields the media packager from direct edge requests.
-- **Edge Caching**: Edge nodes cache media segments. The 10,000 viewer requests hit edge caches, resulting in >99% cache hit ratio and minimal origin load.
-- **HTTP/3 & QUIC**: Provides loss recovery over mobile networks, preventing video stalling when viewers switch cellular towers.
+The seller's browser should publish once. The distribution layer should handle fan-out.
 
-#### D. Mobile Network Adaptation & Reliability
-- **Adaptive Bitrate (ABR)**: Viewers on weak 4G/5G connections automatically step down from 1080p to 480p without buffering or stream disconnection.
-- **WebSocket Data Channel Sync**: Chat messages, buy buttons, live product inventory counters, and price updates are synchronized with video timestamps using a dedicated WebSocket cluster.
+Sending 10,000 WebRTC streams directly from the seller's browser is not practical. It would require 10,000 outbound peer connections, huge uplink bandwidth, repeated encoding or packetization work, a large memory footprint, and complex connection management inside a consumer browser. It would also be unreliable because the seller might be on Wi-Fi, mobile data, or a normal home/office network. The seller should not become the broadcast infrastructure.
+
+### P2P, SFU, and MCU
+
+| Architecture | Strength | Weakness | Best fit |
+| ------------ | -------- | -------- | -------- |
+| P2P | Direct peer connection with no media server | Does not scale to large rooms or audiences | One-to-one calls and very small sessions |
+| SFU | Receives media once and forwards streams with low latency | Requires media infrastructure and bandwidth planning | Interactive rooms, co-hosts, moderators, small live groups |
+| MCU | Mixes/transcodes streams into a composed output | Higher CPU cost and added processing latency | Server-side layouts, recordings, compatibility-focused conferencing |
+
+P2P is the right mental model for this prototype: two participants join a room and exchange media directly after WebSocket signaling. For live shopping at 10,000 viewers, P2P is the wrong distribution model. An SFU is useful for low-latency interactive participants because it forwards media without fully mixing it. An MCU makes sense when the server must compose a single output, but it is heavier because it decodes and re-encodes media.
+
+### Recommended Architecture
+
+```mermaid
+flowchart TD
+    Seller["Seller Browser (WebRTC Upload ~3 Mbps)"] --> SFU["Media Ingest / SFU Node"]
+    
+    SFU -->|WebRTC <300ms| CoHosts["Interactive Viewers / Co-Hosts"]
+    SFU -->|Internal Transcode Push| Transcoder["Transcoding & Packaging"]
+    
+    Transcoder -->|CMAF / LL-HLS 1s Segments| CDN["Global CDN Network"]
+    CDN -->|LL-HLS / HLS Streams| Audience["10,000 Passive Shopping Viewers"]
+```
+
+I would use a hybrid architecture. The seller publishes a single WebRTC stream to media infrastructure. Co-hosts, moderators, or highly interactive buyers can stay on a WebRTC/SFU path because they need low latency and possibly two-way media. The large passive audience should receive LL-HLS or HLS through a CDN, because CDN distribution is much better suited to thousands of viewers.
+
+The exact split depends on the product requirement. If a viewer needs to speak to the seller in real time, WebRTC is appropriate. If a viewer is mostly watching, browsing products, chatting, and clicking buy buttons, a few seconds of video latency is usually acceptable and much cheaper to scale.
+
+### WebRTC vs HLS vs LL-HLS
+
+| Technology | Latency | Scalability | Best use |
+| ---------- | ------- | ----------- | -------- |
+| WebRTC | Very low | Lower without specialized media infrastructure | Two-way calls, co-hosts, auctions, moderation |
+| HLS | Higher | Very high through CDNs | Large passive audiences where latency is less important |
+| LL-HLS | Lower than HLS | High with CDN support | Large audiences where a few seconds of latency is acceptable |
+
+Lower latency usually requires more real-time infrastructure: SFUs, TURN, active connection state tracking, and more operational work. Higher latency allows better CDN caching and simpler viewer delivery. The trade-off is not "WebRTC good, HLS bad"; it is latency versus cost, reach, and operational complexity.
+
+### Mobile Networks
+
+If many viewers are on mobile networks, the system should assume unstable bandwidth, packet loss, higher RTT, changing network conditions, data limits, and weaker devices. The goal is graceful degradation, not forcing every viewer to receive one high-bitrate stream.
+
+For the WebRTC path, I would use quality adaptation where appropriate, such as simulcast or SVC, and monitor RTT, packet loss, bitrate, and frame rate. Audio should be protected because understandable audio matters more than perfect video during commerce conversations.
+
+For the large passive audience, I would generate an adaptive bitrate ladder and let the player switch between quality levels. A viewer on a weak network can fall back to a lower resolution instead of buffering or dropping from the event. CDN delivery also helps mobile viewers by serving segments from a nearby edge.
+
+For 10,000 viewers, my recommendation is publish-once architecture: the seller publishes to media infrastructure, interactive participants use WebRTC/SFU where low latency matters, and the large passive audience receives LL-HLS/HLS through a CDN. This keeps the seller's uplink independent of audience size while letting the system trade latency for scale where appropriate.

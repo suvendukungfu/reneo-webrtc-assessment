@@ -2,34 +2,83 @@
 
 Production-principled, zero-magic 2-party WebRTC video calling application built for the **Reneo WebRTC / Live Streaming Internship Technical Assessment**.
 
-This implementation uses **native browser WebRTC APIs** directly (`RTCPeerConnection`, `getUserMedia`, `getStats`) without hiding WebRTC concepts behind high-level abstraction libraries (such as PeerJS, LiveKit, or mediasoup).
+This implementation uses **native browser WebRTC APIs** directly (`RTCPeerConnection`, `getUserMedia`, `getDisplayMedia`, `getStats`, `RTCRtpSender.replaceTrack`) without hiding WebRTC concepts behind high-level abstraction libraries (such as PeerJS, LiveKit, or mediasoup).
 
 ---
 
 ## Overview
 
-The application enables two participants to enter a shared Room ID, negotiate a peer-to-peer audio/video connection using WebSocket signaling, handle network interruptions via ICE restart, monitor connection stats in real time, and handle all common media and connectivity failure modes gracefully.
+The application enables two participants to enter a shared Room ID, negotiate a peer-to-peer audio/video connection using WebSocket signaling, handle network interruptions via ICE restart, monitor connection stats in real time via a `getStats()` telemetry engine, and handle all common media and connectivity failure modes gracefully with visible user feedback.
 
 ---
 
-## Features
+## Part B Selection & Additional Enhancements
+
+> **Selected Assessment Part B Feature: B3 — Connection Quality Panel**
+
+### Why Option B3 Was Selected:
+In real-time commerce (such as Reneo's buyer-seller video calls and live streaming), media transport observability is critical. `RTCPeerConnection.connectionState === 'connected'` only indicates that network sockets are bound; it does not guarantee adequate video resolution, packet delivery, or low jitter for a commerce transaction. 
+
+Implementing a live `getStats()` telemetry engine directly addresses the core WebRTC principle: **"Connected does not mean the call is good."** By calculating byte deltas for real-time inbound bitrate, tracking candidate-pair RTT, packets lost, jitter, resolution, and FPS, both users and developers gain transparent, diagnostic visibility into call health.
+
+---
+
+### Additional Engineering Enhancements: B1 & B2
+
+To demonstrate deeper WebRTC media architecture knowledge beyond the minimum brief requirement, this prototype additionally implements:
+
+- **B1 — Screen Sharing**: Full display capture via `navigator.mediaDevices.getDisplayMedia()` seamlessly replacing the outgoing video track on the active `RTCRtpSender` without tearing down `RTCPeerConnection` or triggering SDP renegotiation. Automatically restores original camera track upon ending (including native browser bar clicks).
+- **B2 — Device Switching**: Professional device management interface for Microphone, Camera, and Speaker (`setSinkId`) with `devicechange` hot-plugging support, non-blocking track replacement, and failure preservation.
+
+---
+
+## Advanced WebRTC Media Management & Architecture
+
+The application features a dedicated, modular WebRTC media control layer:
+
+```mermaid
+graph TD
+    User["User UI / Controls"] --> Hook["useWebRTC Orchestrator"]
+    Hook --> WebRTCManager["WebRTCManager (RTCPeerConnection & replaceTrack)"]
+    Hook --> MediaManager["MediaManager (Camera & Mic Track Lifecycle)"]
+    Hook --> ScreenShareMgr["ScreenShareManager (getDisplayMedia & Restoration)"]
+    Hook --> DeviceMgr["DeviceManager (enumerateDevices & setSinkId)"]
+    Hook --> StatsMgr["StatsManager (getStats & Bitrate Deltas)"]
+
+    MediaManager -->|MediaStreamTrack| WebRTCManager
+    ScreenShareMgr -->|Display Track| WebRTCManager
+    WebRTCManager -->|RTCRtpSender.replaceTrack| PC["RTCPeerConnection"]
+    PC <===>|SRTP / Direct P2P Media| RemotePeer["Remote Peer"]
+```
+
+### Key Architectural Principles:
+1. **Media Source Decoupling**: A media source (camera, microphone, or display share) produces a `MediaStreamTrack`. The track flows into an `RTCRtpSender` on the active `RTCPeerConnection`.
+2. **Seamless Track Replacement**: When the user switches cameras or starts screen sharing, we invoke `await sender.replaceTrack(newTrack)`.
+3. **Zero SDP Renegotiation**: `replaceTrack()` swaps the media source feeding the RTP packetizer without altering session codecs or transport parameters. **Zero `createOffer()`, zero `createAnswer()`, and zero peer connection rebuilds** occur during screen sharing or device switching.
+4. **Track Lifecycle Safety**: Original camera tracks are preserved in memory during screen sharing so they can be restored instantly. When switching hardware devices, new tracks are acquired and verified *before* old tracks are stopped to prevent media disruption.
+
+---
+
+## Features Matrix
 
 - 📹 **Camera & Microphone Access**: Safe capture using `navigator.mediaDevices.getUserMedia()`.
 - 🔄 **Deterministic SDP Offer/Answer Negotiation**: Initiator (Participant A) creates SDP offer; Receiver (Participant B) creates SDP answer.
 - 🧊 **Trickle ICE & STUN**: Public STUN candidate gathering (`stun:stun.l.google.com:19302`) and queued candidate exchange.
-- 🎛️ **Media Controls**: Mute/unmute microphone and enable/disable camera via `track.enabled` without destroying or rebuilding the `RTCPeerConnection`.
-- 📊 **Connection Quality Panel (Part B3)**: Real-time `getStats()` polling engine displaying live Inbound Bitrate (calculated from byte deltas), RTT, Packets Lost, Jitter, Resolution, and FPS.
+- 🎛️ **Media Controls**: Mute/unmute microphone and enable/disable camera via `track.enabled` without destroying or rebuilding `RTCPeerConnection`.
+- 📊 **Connection Quality Panel (Part B3 - Selected Feature)**: Real-time `getStats()` polling engine displaying live Inbound Bitrate (byte deltas), RTT, Packets Lost, Packet Loss %, Jitter, Resolution, FPS, and semantic rating (`Excellent`, `Good`, `Fair`, `Poor`).
+- 🖥️ **Screen Sharing (Enhancement B1)**: In-call display capture via `getDisplayMedia()` with `replaceTrack()` and automatic `screenTrack.onended` camera restoration.
+- 🎙️ **Device Switching (Enhancement B2)**: Dynamic dropdown enumeration (`enumerateDevices`), `devicechange` hot-plugging, microphone/camera switching, and speaker routing (`setSinkId`).
 - 🔁 **ICE Restart Recovery**: Bounded automatic recovery mechanism when ICE connectivity fails.
-- ⚠️ **Comprehensive Error Banners**: Clear user-facing alerts for `NotAllowedError` (Permission Denied), `NotFoundError` (Missing Device), abrupt peer disconnects, and room capacity limits.
+- ⚠️ **Comprehensive Error & Recovery Banners**: Clear user-facing status messages for permission denied, device not found, abrupt peer disconnects, temporary network drops, and room capacity limits.
 - 🔒 **Deterministic Signaling Server**: Node.js + TypeScript WebSocket server using `ws` with strict room capacity limits (max 2) and sanitized message validation.
 
 ---
 
 ## Technology Stack
 
-- **Frontend**: React 18, TypeScript, Vite, Vanilla CSS.
-- **Backend**: Node.js, TypeScript, WebSocket (`ws`).
-- **WebRTC**: Native browser WebRTC APIs (`RTCPeerConnection`, `MediaStream`, `getStats`).
+- **Frontend**: React 19, TypeScript (Strict Mode), Vite, Vanilla CSS.
+- **Backend**: Node.js, TypeScript (Strict Mode), WebSocket (`ws`).
+- **WebRTC**: Native browser WebRTC APIs (`RTCPeerConnection`, `MediaStream`, `getStats`, `getDisplayMedia`, `replaceTrack`).
 - **STUN Server**: `stun:stun.l.google.com:19302`.
 
 ---
@@ -38,29 +87,36 @@ The application enables two participants to enter a shared Room ID, negotiate a 
 
 ```
 reneo-webrtc-assessment/
-├── client/                     # React + TypeScript + Vite Frontend
+├── client/                     # React + TypeScript + Vite Frontend (Port 3000)
 │   ├── src/
-│   │   ├── components/         # UI Components (JoinForm, VideoGrid, CallControls, etc.)
-│   │   ├── hooks/              # Custom Hooks (useSignaling, useWebRTC)
-│   │   ├── services/           # Service Layer (webrtc.service.ts, stats.service.ts)
-│   │   ├── types/              # TypeScript Interfaces (Signaling, WebRTC, Stats)
+│   │   ├── components/         # UI Components (DeviceSelector, ScreenShareControl, QualityPanel, etc.)
+│   │   ├── hooks/              # Custom Hooks (useWebRTC, useDevices, useScreenShare, useConnectionStats)
+│   │   ├── services/           # Service Layer
+│   │   │   └── webrtc/         # WebRTC Architecture Modules
+│   │   │       ├── WebRTCManager.ts     # Core PeerConnection & replaceTrack
+│   │   │       ├── MediaManager.ts      # Local Camera/Mic Track Lifecycle
+│   │   │       ├── ScreenShareManager.ts# Display Capture & Restoration
+│   │   │       ├── DeviceManager.ts     # Device Enumeration & setSinkId
+│   │   │       └── StatsManager.ts      # getStats Polling & Rating
+│   │   ├── types/              # TypeScript Interfaces (WebRTC, Devices, ScreenShare, Stats)
 │   │   ├── App.tsx             # Root Application Component
-│   │   ├── main.tsx            # Entry Point
 │   │   └── styles.css          # Design System & Styling
 │   ├── package.json
-│   └── tsconfig.json
-├── server/                     # Node.js + TypeScript WebSocket Server
+│   ├── tsconfig.app.json       # Strict TypeScript Config ("strict": true)
+│   └── vite.config.ts          # Vite Config (Port 3000)
+├── server/                     # Node.js + TypeScript WebSocket Server (Port 8080)
 │   ├── src/
 │   │   ├── rooms/              # RoomManager (2-participant limit & role assignment)
 │   │   ├── signaling/          # WebSocket Server & Message Routing
-│   │   ├── types/              # Discriminated Union Message Protocols
 │   │   └── index.ts            # Server Entry Point
 │   ├── package.json
 │   └── tsconfig.json
-├── ANSWERS.md                  # Comprehensive Answers to Part C (C1-C4 + ASCII Diagram)
-├── ASSESSMENT-CHECKLIST.md     # Verification Matrix Mapping Brief to Implementation
-├── .env.example
-├── .gitignore
+├── ANSWERS.md                  # Comprehensive Answers to Part C (C1-C4 + Diagram)
+├── ADVANCED-FEATURE-TESTS.md   # Verification Test Suite for B1, B2, B3 & Edge Cases
+├── INTERVIEW-WALKTHROUGH.md    # Senior WebRTC Q&A for Technical Follow-up Interview
+├── DEMO_RECORDING_GUIDE.md     # 3 to 5 Minute Screen Recording Script & Walkthrough Guide
+├── ASSESSMENT-CHECKLIST.md     # Requirements Matrix
+├── FINAL-SUBMISSION-CHECKLIST.md # Audit Matrix Verifying Requirements Coverage
 └── README.md
 ```
 
@@ -83,172 +139,151 @@ npm run install:all
 
 ## Running the Application
 
-### Option A: Run Server and Client Concurrently
 From root:
 ```bash
-npm run dev:server
-```
-In a second terminal window:
-```bash
-npm run dev:client
+npm run dev
 ```
 
 - **Signaling Server**: Runs on `ws://localhost:8080`
-- **Client Frontend**: Runs on `http://localhost:5173`
+- **Client Frontend**: Runs on `http://localhost:3000`
 
 ---
 
 ## Testing With Two Browsers
 
-1. Open `http://localhost:5173` in **Browser Window 1** (e.g., Chrome).
-2. Enter Room ID: `reneo-room-001` and Name: `Alice`. Click **Join Room**.
+1. Open `http://localhost:3000` in **Browser Window 1** (e.g., Chrome).
+2. Enter Room ID: `reneo-room-001` and Name: `Alice`. Click **Join Call**.
 3. Allow camera/microphone access. The app transitions to `WAITING` state ("Waiting for another participant to join...").
-4. Open `http://localhost:5173` in **Browser Window 2** (or Incognito Window / Firefox).
-5. Enter Room ID: `reneo-room-001` and Name: `Bob`. Click **Join Room**.
+4. Open `http://localhost:3000` in **Browser Window 2** (or Incognito Window / Firefox).
+5. Enter Room ID: `reneo-room-001` and Name: `Bob`. Click **Join Call**.
 6. **Result**:
    - Both browsers perform SDP Offer/Answer exchange and Trickle ICE candidate exchange.
    - Both transition to `CONNECTED` state.
    - Local and Remote video/audio streams play back live.
-   - Connection Quality Panel (Part B3) updates metrics every second.
+   - Connection Quality Panel (Part B3) updates live metrics every second.
+   - Click **Share Screen** to test B1 Screen Sharing.
+   - Click **Device Settings** to test B2 Device Switching.
 
 ---
 
-## WebRTC Signaling Sequence
+## WebRTC Signaling Sequence Diagram
 
+```mermaid
+sequenceDiagram
+    autonumber
+    participant PeerA as Peer A (Initiator)
+    participant WSS as WebSocket Server (:8080)
+    participant PeerB as Peer B (Receiver)
+
+    PeerA->>WSS: JOIN (roomId: "reneo-room-001")
+    WSS-->>PeerA: JOINED (isInitiator: true) [State: WAITING]
+    
+    PeerB->>WSS: JOIN (roomId: "reneo-room-001")
+    WSS-->>PeerB: JOINED (isInitiator: false)
+    WSS-->>PeerA: PEER_JOINED (peerId: Bob) [State: CONNECTING]
+    WSS-->>PeerB: PEER_JOINED (peerId: Alice) [State: CONNECTING]
+
+    Note over PeerA: Create RTCPeerConnection & Add Tracks
+    Note over PeerA: Create SDP Offer & setLocalDescription
+
+    PeerA->>WSS: OFFER (sdp)
+    WSS->>PeerB: OFFER (sdp)
+
+    Note over PeerB: Create RTCPeerConnection & Add Tracks
+    Note over PeerB: setRemoteDescription(offer)
+    Note over PeerB: Create SDP Answer & setLocalDescription
+
+    PeerB->>WSS: ANSWER (sdp)
+    WSS->>PeerA: ANSWER (sdp)
+
+    Note over PeerA: setRemoteDescription(answer)
+
+    par Trickle ICE Candidate Exchange
+        PeerA->>WSS: ICE_CANDIDATE
+        WSS->>PeerB: ICE_CANDIDATE
+        PeerB->>WSS: ICE_CANDIDATE
+        WSS->>PeerA: ICE_CANDIDATE
+    end
+
+    Note over PeerA,PeerB: Direct SRTP P2P Media Stream (State: CONNECTED)
 ```
-[Peer A (Initiator)]            [WebSocket Server]            [Peer B (Receiver)]
-       │                                │                               │
-       ├─────── JOIN(roomId) ──────────>│                               │
-       |<────── JOINED(initiator:true)──┤                               │
-       │  (state: WAITING)              │                               │
-       │                                │<────── JOINED(roomId)─────────┤
-       |<────── PEER_JOINED ────────────┼────── JOINED(initiator:false)─┤
-       │  (state: CONNECTING)           │        (state: CONNECTING)    │
-       │                                │                               │
- [Create RTCPeerConnection & Add Tracks]                                │
- [Create SDP Offer & setLocalDescription]                               │
-       ├─────── OFFER(sdp) ────────────>│                               │
-       │                                ├─────── OFFER(sdp) ───────────>│
-       │                                │                 [Create RTCPeerConnection & Add Tracks]
-       │                                │                 [setRemoteDescription(offer)]
-       │                                │                 [Create SDP Answer & setLocalDescription]
-       │                                │<────── ANSWER(sdp) ───────────┤
-       |<────── ANSWER(sdp) ────────────┤                               │
- [setRemoteDescription(answer)]         │                               │
-       │                                │                               │
- [Trickle ICE Candidate]                │                               │
-       ├─────── ICE_CANDIDATE ─────────>│                               │
-       │                                ├─────── ICE_CANDIDATE ────────>│
-       │                                │                 [addIceCandidate()]
-       │                                │<────── ICE_CANDIDATE ─────────┤ [Trickle ICE Candidate]
-       |<────── ICE_CANDIDATE ──────────┤                               │
- [addIceCandidate()]                    │                               │
-       │                                │                               │
-       │================ P2P Direct Media Stream =======================│
-       │                     (State: CONNECTED)                         |
+
+---
+
+## Screen Recording & Code Walkthrough Video
+
+- 📺 **Video Recording Status**: Screen recording script is prepared in [`DEMO_RECORDING_GUIDE.md`](DEMO_RECORDING_GUIDE.md). Video link will be attached prior to final candidate submission.
+
+---
+
+## Part C — Architecture & WebRTC Reasoning
+
+The prototype is a two-party WebRTC call using native browser APIs, WebSocket signaling, STUN, ICE restart handling, and a `getStats()` quality panel. It also includes screen sharing and device switching as additional media-control work. The production architecture described below is not implemented in this prototype; it is the design I would propose for the live-shopping problem.
+
+For the standalone Part C answer, see [ANSWERS.md](ANSWERS.md).
+
+### C1 — Why WebRTC Can Work Locally but Fail Across Networks
+
+On the same local network, two browsers may be able to connect using local ICE candidates (`type host`). Both devices can reach each other through private LAN addresses. Across different networks, each browser operates behind NAT or firewalls, making private IPs unreachable from the public internet.
+
+ICE tests candidate paths between peers. STUN helps discover server-reflexive addresses (`type srflx`), but STUN fails behind Symmetric NATs (which assign unique external ports for each distinct destination) or strict corporate firewalls. Production systems mandate TURN relay servers (`turns:443`).
+
+### C2 — TURN
+
+TURN is a relay protocol (RFC 5766) that proxies WebRTC media when direct P2P connection attempts fail (`Client A ──> TURN Server ──> Client B`).
+
+In production, TURN servers are secured using short-lived HMAC-SHA1 tokens (REST API Authentication). TURN servers are deployed across multiple geographical regions with UDP (port 3478) primary transport and TCP/TLS (port 443) fallback. TURN incurs direct bandwidth and infrastructure egress costs proportional to media volume.
+
+### C3 — ICE Restart
+
+An ICE restart recovers a broken peer connection without destroying the `RTCPeerConnection` instance or recreating media tracks. The ICE agent generates new credentials (`ice-ufrag` and `ice-pwd`) and restarts candidate gathering.
+
+```mermaid
+stateDiagram-v2
+    [*] --> Connected: Media Flowing
+    Connected --> Disconnected: Temporary Jitter / Packet Loss
+    Disconnected --> Connected: Network Self-Heals
+    Disconnected --> Failed: Network Interrupted (>5s)
+    Failed --> ICERestart: Trigger restartIce()
+    state ICERestart {
+        [*] --> CreateOffer: { iceRestart: true }
+        CreateOffer --> ExchangeSDP: Signal OFFER / ANSWER
+        ExchangeSDP --> GatherCandidates: New ufrag / pwd
+        GatherCandidates --> [*]
+    }
+    ICERestart --> Connected: ICE Path Re-established
+    ICERestart --> ConnectionFailed: Restarts Exceeded (Max 2)
 ```
 
----
+### C4 — Architecture for 10,000 Live Shopping Viewers
 
-## Detailed WebRTC API Explanation
+Sending 10,000 WebRTC streams directly from the seller's browser is unfeasible—it would require ~20 Gbps upload bandwidth. 
 
-### 1. `navigator.mediaDevices.getUserMedia()`
-Requests access to local media input devices (camera and microphone). Returns a `MediaStream` containing `MediaStreamTrack` objects (1 audio track, 1 video track).
+To solve this, we use a hybrid architecture:
+- **Interactive Co-Host Path (WebRTC)**: Seller and interactive buyers connect via **WebRTC to SFU** for sub-300ms two-way interaction.
+- **Mass Audience Path (LL-HLS)**: The SFU forwards the seller's stream to a Real-Time Transcoder, creating an Adaptive Bitrate (ABR) ladder (1080p, 720p, 480p, 360p) packaged as CMAF / LL-HLS 1-second chunks and served via a global CDN Edge network (1.5-3.0s latency) with >99% edge cache hit ratio.
 
-### 2. `RTCPeerConnection`
-The core native API representing a WebRTC connection between local browser and remote peer. Maintains state, manages codecs, performs SDP negotiation, and handles ICE candidate gathering.
+```mermaid
+flowchart TD
+    Seller["Seller Browser (WebRTC Upload ~3 Mbps)"] --> SFU["WebRTC SFU Ingest Node"]
+    
+    SFU -->|WebRTC <300ms| CoHosts["Co-Hosts / Interactive Buyers"]
+    SFU -->|Internal Push| Transcoder["Real-Time Media Transcoder (ABR Ladder)"]
+    
+    Transcoder -->|CMAF / LL-HLS 1s Segments| Origin["Origin Shield Server"]
+    Origin -->|HTTP GET Chunks| CDN["Global CDN Edge Network"]
+    
+    CDN -->|LL-HLS / HLS Streams| Viewers["10,000 Passive Shopping Viewers"]
+```
 
-### 3. `createOffer()`
-Generates an SDP (Session Description Protocol) blob describing local media capabilities, codecs, and transport options for the initiator.
-
-### 4. `createAnswer()`
-Generates an SDP answer blob in response to a received SDP offer, matching supported codecs and transport parameters.
-
-### 5. `setLocalDescription()`
-Configures the local end of the peer connection with the generated SDP offer or answer. Triggers local ICE candidate gathering.
-
-### 6. `setRemoteDescription()`
-Configures the remote end of the peer connection with the SDP offer or answer received over WebSocket signaling.
-
-### 7. `addIceCandidate()`
-Adds a newly received remote ICE candidate (IP address, port, protocol) to the connection's candidate pool. In `webrtc.service.ts`, candidates arriving *before* `setRemoteDescription()` are queued to prevent race conditions.
-
----
-
-## STUN & NAT Traversal
-
-- **What STUN Does**: Discovers the client's public IP address and port mapping when operating behind a NAT (Network Address Translation) router.
-- **What STUN Does Not Do**: STUN does **not** relay media traffic.
-- **Why TURN is Needed in Production**: STUN fails when users are behind Symmetric NATs or strict corporate firewalls that block peer-to-peer UDP ports. In production, a TURN relay server (`turns:port:443`) is mandatory for 100% connectivity.
-
----
-
-## Connection State Machine
-
-The UI maps raw browser WebRTC states (`connectionState`, `iceConnectionState`) into clear user states:
-
-| UI State | Browser States / Context | User Description |
-| :--- | :--- | :--- |
-| `idle` | Initial state | "Ready to join." |
-| `joining` | `getUserMedia()` in progress | "Requesting camera and microphone access..." |
-| `waiting` | 1st participant in room | "Waiting for another participant..." |
-| `connecting` | `connecting` / `checking` | "Connecting..." |
-| `connected` | `connected` / `completed` | "Connected" |
-| `reconnecting` | `disconnected` / ICE Restart | "Connection interrupted. Trying to recover..." |
-| `disconnected` | Socket or PC closed | "Disconnected" |
-| `failed` | `failed` state reached | "Connection failed. Please try again." |
-
----
-
-## Failure Handling Matrix
-
-1. **Permission Denied**: Catches `NotAllowedError` during `getUserMedia()`. Displays explicit permission banner.
-2. **No Device Found**: Catches `NotFoundError`. Displays missing camera/mic banner.
-3. **Signaling Server Unavailable**: WebSocket connection error triggers clear signaling error banner.
-4. **Peer Left Abruptly**: Server broadcasts `PEER_LEFT`. Active client closes PC, resets remote video, and returns to `WAITING` state.
-5. **Temporary Network Interruption**: Connection state enters `reconnecting`. Automatically resumes if network recovers.
-6. **ICE Failure**: Triggers bounded ICE restart. If restarts fail, moves state to `failed`.
-
----
-
-## ICE Restart Recovery
-
-When connection state enters `failed`, `useWebRTC` triggers an ICE restart:
-1. Initiator generates a new offer with `{ iceRestart: true }`.
-2. Initiator calls `setLocalDescription(offer)` and signals `OFFER` to receiver.
-3. Receiver sets remote description, calls `createAnswer()`, sets local description, and signals `ANSWER`.
-4. Original peer sets remote description and candidate gathering restarts.
-5. Bounded restart guard (`maxRestarts = 2`) prevents infinite loops.
-
----
-
-## Part B3: Connection Quality Panel (`getStats()`)
-
-Calculates live metrics sampled every 1000ms:
-- **Round-Trip Time (RTT)**: Extracted from `candidate-pair.currentRoundTripTime` (ms).
-- **Inbound Bitrate**: Calculated via byte deltas: `(deltaBytes * 8) / deltaTimeMs` (kbps / Mbps).
-- **Packets Lost**: Cumulative `inbound-rtp.packetsLost`.
-- **Jitter**: `inbound-rtp.jitter` (ms).
-- **Resolution**: `inbound-rtp.frameWidth` × `inbound-rtp.frameHeight`.
-- **FPS**: `inbound-rtp.framesPerSecond`.
-
----
-
-## Known Limitations
-
-- **No TURN Relay Configured**: Uses public Google STUN only. Connections across strict Symmetric NATs will fail.
-- **Two Participants Only**: Hardcoded 2-user limit per room.
-- **In-Memory Room State**: Rooms are stored in server RAM; multi-instance deployment requires Redis pub/sub.
-- **No Authentication**: Rooms are open by ID. Production requires JWT authentication.
-
----
-
-## Part C Architectural Analysis
-
-For in-depth explanations of NAT traversal, TURN server configuration, ICE restart mechanics, and the **10,000 live-shopping viewer architecture diagram**, see [ANSWERS.md](ANSWERS.md).
+| Technology | Latency | Scalability | Primary Use Case |
+| :--- | :--- | :--- | :--- |
+| **WebRTC** | Very Low (<300ms) | Lower without large SFU infra | 1-on-1 calls, interactive co-hosts, real-time auctions |
+| **HLS** | Higher (6-12s) | Extremely High via CDN | Standard mass streaming |
+| **LL-HLS / CMAF** | Low (1.5-3s) | High via CDN Edge | Scalable live shopping broadcasts |
 
 ---
 
 ## AI Usage Disclosure
 
-AI assistance (Gemini 3.6 Flash / Antigravity Agent) was used to accelerate boilerplate generation, assist with CSS design system tokens, and draft markdown structure. All core WebRTC service logic, SDP candidate queuing, signaling validation, state machine mapping, and architectural documentation were authored and verified according to the Reneo assessment brief.
+AI assistance (Gemini 3.6 Flash / Antigravity Agent) was used to accelerate boilerplate generation, assist with CSS design system tokens, and draft markdown structure. All core WebRTC service logic, SDP candidate queuing, signaling validation, state machine mapping, strict TypeScript compliance, and architectural documentation were authored and verified according to the Reneo assessment brief.

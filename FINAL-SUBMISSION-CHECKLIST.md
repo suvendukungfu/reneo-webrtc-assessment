@@ -10,16 +10,16 @@ This document contains the final submission audit matrix for the **Reneo WebRTC 
 
 | Requirement | Status | Source Location / Evidence |
 | :--- | :---: | :--- |
-| **Camera & Microphone Access** | **PASS** | [`useWebRTC.ts:257`](client/src/hooks/useWebRTC.ts#L257) — Calls `navigator.mediaDevices.getUserMedia({ video: true, audio: true })`. |
+| **Camera & Microphone Access** | **PASS** | [`useWebRTC.ts:314`](client/src/hooks/useWebRTC.ts#L314) — Calls `navigator.mediaDevices.getUserMedia({ video: true, audio: true })`. |
 | **Local Video Element** | **PASS** | [`VideoGrid.tsx:58-75`](client/src/components/VideoGrid.tsx#L58-L75) — Renders `<video autoPlay muted playsInline />`. |
 | **Remote Video Element** | **PASS** | [`VideoGrid.tsx:34-42`](client/src/components/VideoGrid.tsx#L34-L42) — Renders `<video autoPlay playsInline />` attached to remote `MediaStream`. |
-| **Join / Leave Room** | **PASS** | [`JoinForm.tsx`](client/src/components/JoinForm.tsx) & [`useWebRTC.ts:341`](client/src/hooks/useWebRTC.ts#L341) — Sends `JOIN` and `LEAVE` WebSocket signals. |
-| **Mute / Unmute Microphone** | **PASS** | [`useWebRTC.ts:358`](client/src/hooks/useWebRTC.ts#L358) — Toggles `audioTrack.enabled` without rebuilding connection. |
-| **Enable / Disable Camera** | **PASS** | [`useWebRTC.ts:368`](client/src/hooks/useWebRTC.ts#L368) — Toggles `videoTrack.enabled` without rebuilding connection. |
-| **Hang Up & Cleanup** | **PASS** | [`useWebRTC.ts:305`](client/src/hooks/useWebRTC.ts#L305) — `cleanupCall()` stops tracks, closes PC, closes WS, and clears state. |
-| **Visible Connection State** | **PASS** | [`ConnectionStatus.tsx`](client/src/components/ConnectionStatus.tsx) — Displays human-readable state badges (`idle` to `failed`). |
+| **Join / Leave Room** | **PASS** | [`JoinForm.tsx`](client/src/components/JoinForm.tsx) (rendered inside [`JoinScreen.tsx`](client/src/components/JoinScreen.tsx)) & [`useWebRTC.ts:420`](client/src/hooks/useWebRTC.ts#L420) — Sends `JOIN` and `LEAVE` WebSocket signals. |
+| **Mute / Unmute Microphone** | **PASS** | [`useWebRTC.ts:437`](client/src/hooks/useWebRTC.ts#L437) — Toggles `audioTrack.enabled` without rebuilding connection. |
+| **Enable / Disable Camera** | **PASS** | [`useWebRTC.ts:448`](client/src/hooks/useWebRTC.ts#L448) — Toggles `videoTrack.enabled` without rebuilding connection. |
+| **Hang Up & Cleanup** | **PASS** | [`useWebRTC.ts:376`](client/src/hooks/useWebRTC.ts#L376) — `cleanupCall()` stops tracks, closes PC, closes WS, and clears state. |
+| **Visible Connection State & Messages** | **PASS** | [`ConnectionStatus.tsx`](client/src/components/ConnectionStatus.tsx) (rendered in [`Header.tsx`](client/src/components/Header.tsx) & [`App.tsx`](client/src/App.tsx)) — Displays state badges (`idle` to `failed`) and live user `statusMessage` explanation banners. |
 | **Real Signaling Server** | **PASS** | [`websocket.server.ts`](server/src/signaling/websocket.server.ts) — Node.js + `ws` WebSocket server on port 8080. |
-| **STUN Server Config** | **PASS** | [`webrtc.service.ts:14`](client/src/services/webrtc.service.ts#L14) — `iceServers: [{ urls: "stun:stun.l.google.com:19302" }]`. |
+| **STUN Server Config** | **PASS** | [`webrtc.service.ts:11`](client/src/services/webrtc.service.ts#L11) — `iceServers: [{ urls: "stun:stun.l.google.com:19302" }]`. |
 
 ---
 
@@ -27,13 +27,13 @@ This document contains the final submission audit matrix for the **Reneo WebRTC 
 
 | Native WebRTC API | Status | Source Location / Evidence |
 | :--- | :---: | :--- |
-| **`getUserMedia()`** | **PASS** | [`useWebRTC.ts:257`](client/src/hooks/useWebRTC.ts#L257) — Directly invokes browser media capture. |
-| **`RTCPeerConnection`** | **PASS** | [`webrtc.service.ts:35`](client/src/services/webrtc.service.ts#L35) — Native `new RTCPeerConnection(RTC_CONFIG)`. |
-| **`createOffer()`** | **PASS** | [`webrtc.service.ts:121`](client/src/services/webrtc.service.ts#L121) — Native SDP offer creation. |
-| **`createAnswer()`** | **PASS** | [`webrtc.service.ts:129`](client/src/services/webrtc.service.ts#L129) — Native SDP answer creation. |
-| **`setLocalDescription()`** | **PASS** | [`webrtc.service.ts:122,130`](client/src/services/webrtc.service.ts#L122) — Sets local SDP offer/answer description. |
-| **`setRemoteDescription()`** | **PASS** | [`webrtc.service.ts:145`](client/src/services/webrtc.service.ts#L145) — Sets remote SDP description and flushes queued ICE candidates. |
-| **`addIceCandidate()`** | **PASS** | [`webrtc.service.ts:157,176`](client/src/services/webrtc.service.ts#L157) — Adds remote ICE candidates with queueing support. |
+| **`getUserMedia()`** | **PASS** | [`useWebRTC.ts:314`](client/src/hooks/useWebRTC.ts#L314) — Directly invokes browser media capture. |
+| **`RTCPeerConnection`** | **PASS** | [`webrtc.service.ts:37`](client/src/services/webrtc.service.ts#L37) — Native `new RTCPeerConnection(RTC_CONFIG)`. |
+| **`createOffer()`** | **PASS** | [`webrtc.service.ts:123`](client/src/services/webrtc.service.ts#L123) — Native SDP offer creation. |
+| **`createAnswer()`** | **PASS** | [`webrtc.service.ts:135`](client/src/services/webrtc.service.ts#L135) — Native SDP answer creation. |
+| **`setLocalDescription()`** | **PASS** | [`webrtc.service.ts:128,141`](client/src/services/webrtc.service.ts#L128) — Sets local SDP offer/answer description. |
+| **`setRemoteDescription()`** | **PASS** | [`webrtc.service.ts:147`](client/src/services/webrtc.service.ts#L147) — Sets remote SDP description and flushes queued ICE candidates. |
+| **`addIceCandidate()`** | **PASS** | [`webrtc.service.ts:158,176`](client/src/services/webrtc.service.ts#L158) — Adds remote ICE candidates with queueing support. |
 
 ---
 
@@ -41,11 +41,11 @@ This document contains the final submission audit matrix for the **Reneo WebRTC 
 
 | Failure Case | Status | Source Location / Evidence |
 | :--- | :---: | :--- |
-| **Permission Denied** | **PASS** | [`useWebRTC.ts:277`](client/src/hooks/useWebRTC.ts#L277) — Catches `NotAllowedError` and renders explicit error banner. |
-| **No Device Found** | **PASS** | [`useWebRTC.ts:284`](client/src/hooks/useWebRTC.ts#L284) — Catches `NotFoundError` and renders missing device banner. |
-| **Peer Disconnects Abruptly** | **PASS** | [`useWebRTC.ts:134`](client/src/hooks/useWebRTC.ts#L134) & [`websocket.server.ts:210`](server/src/signaling/websocket.server.ts#L210) — Handles `PEER_LEFT` signal, returns client to `waiting` state, and promotes remaining client to initiator. |
-| **Temporary Network Interruption**| **PASS** | [`useWebRTC.ts:232`](client/src/hooks/useWebRTC.ts#L232) — Transitions connection state to `reconnecting` when ICE drops. |
-| **Peer Connection Failure & ICE Restart** | **PASS** | [`webrtc.service.ts:187`](client/src/services/webrtc.service.ts#L187) & [`useWebRTC.ts:180`](client/src/hooks/useWebRTC.ts#L180) — Triggers bounded `{ iceRestart: true }` recovery offer. |
+| **Permission Denied** | **PASS** | [`useWebRTC.ts:345`](client/src/hooks/useWebRTC.ts#L345) — Catches `NotAllowedError` and renders explicit error banner. |
+| **No Device Found** | **PASS** | [`useWebRTC.ts:355`](client/src/hooks/useWebRTC.ts#L355) — Catches `NotFoundError` and renders missing device banner. |
+| **Peer Disconnects Abruptly** | **PASS** | [`useWebRTC.ts:168`](client/src/hooks/useWebRTC.ts#L168) & [`websocket.server.ts:220`](server/src/signaling/websocket.server.ts#L220) — Handles `PEER_LEFT` signal, returns client to `waiting` state with explanatory banner, and promotes remaining client to initiator. |
+| **Temporary Network Interruption**| **PASS** | [`useWebRTC.ts:287`](client/src/hooks/useWebRTC.ts#L287) — Transitions connection state to `reconnecting` when ICE drops. |
+| **Peer Connection Failure & ICE Restart** | **PASS** | [`webrtc.service.ts:193`](client/src/services/webrtc.service.ts#L193) & [`useWebRTC.ts:228`](client/src/hooks/useWebRTC.ts#L228) — Triggers bounded `{ iceRestart: true }` recovery offer. |
 
 ---
 
@@ -53,12 +53,13 @@ This document contains the final submission audit matrix for the **Reneo WebRTC 
 
 | Metric | Status | Source Location / Evidence |
 | :--- | :---: | :--- |
-| **Inbound Bitrate** | **PASS** | [`stats.service.ts:104`](client/src/services/stats.service.ts#L104) — Delta calculated: `(deltaBytes * 8) / deltaTimeMs`. |
-| **Round-Trip Time (RTT)** | **PASS** | [`stats.service.ts:61`](client/src/services/stats.service.ts#L61) — Extracted from `candidate-pair.currentRoundTripTime`. |
-| **Packets Lost** | **PASS** | [`stats.service.ts:70`](client/src/services/stats.service.ts#L70) — Extracted from `inbound-rtp.packetsLost`. |
-| **Jitter** | **PASS** | [`stats.service.ts:74`](client/src/services/stats.service.ts#L74) — Extracted from `inbound-rtp.jitter`. |
-| **Video Resolution** | **PASS** | [`stats.service.ts:79`](client/src/services/stats.service.ts#L79) — Extracted from `frameWidth` × `frameHeight`. |
-| **Frames Per Second (FPS)** | **PASS** | [`stats.service.ts:87`](client/src/services/stats.service.ts#L87) — Extracted from `inbound-rtp.framesPerSecond`. |
+| **Part B Option Rationale** | **PASS** | [`README.md:125`](README.md#L125) — Explains why Option B3 (Connection Quality Panel) was chosen. |
+| **Inbound Bitrate** | **PASS** | [`stats.service.ts:113`](client/src/services/stats.service.ts#L113) — Delta calculated: `(deltaBytes * 8) / deltaTimeMs`. |
+| **Round-Trip Time (RTT)** | **PASS** | [`stats.service.ts:68`](client/src/services/stats.service.ts#L68) — Extracted from `candidate-pair.currentRoundTripTime`. |
+| **Packets Lost** | **PASS** | [`stats.service.ts:80`](client/src/services/stats.service.ts#L80) — Extracted from `inbound-rtp.packetsLost`. |
+| **Jitter** | **PASS** | [`stats.service.ts:84`](client/src/services/stats.service.ts#L84) — Extracted from `inbound-rtp.jitter`. |
+| **Video Resolution** | **PASS** | [`stats.service.ts:89`](client/src/services/stats.service.ts#L89) — Extracted from `frameWidth` × `frameHeight`. |
+| **Frames Per Second (FPS)** | **PASS** | [`stats.service.ts:97`](client/src/services/stats.service.ts#L97) — Extracted from `inbound-rtp.framesPerSecond`. |
 
 ---
 
@@ -77,8 +78,9 @@ This document contains the final submission audit matrix for the **Reneo WebRTC 
 
 | Check | Status | Verification Summary |
 | :--- | :---: | :--- |
-| **Clean Code & No Dead Code** | **PASS** | Unused template assets removed; no leftover debug logs. |
-| **No Fake Metrics** | **PASS** | All metrics in `StatsService` derived directly from `RTCStatsReport`. |
-| **Strict TypeScript** | **PASS** | Clean build (`npm run typecheck`) with 0 errors across server & client. |
-| **Documentation Accuracy** | **PASS** | [`README.md`](README.md) accurately documents actual implementation details. |
-| **Repository Build** | **PASS** | `npm run build` succeeds completely (Vite client + Node tsc server). |
+| **Screen Recording Guide** | **PASS** | [`DEMO_RECORDING_GUIDE.md`](DEMO_RECORDING_GUIDE.md) & [`README.md:143`](README.md#L143) — Includes 3-5 minute demo walkthrough script and video link placeholder. |
+| **Clean Code & Component Integration** | **PASS** | [`JoinForm.tsx`](client/src/components/JoinForm.tsx) and [`ConnectionStatus.tsx`](client/src/components/ConnectionStatus.tsx) are actively imported and rendered in the app. |
+| **Strict TypeScript Compliance** | **PASS** | `"strict": true` enabled in `tsconfig.app.json` and `server/tsconfig.json`. Zero `any` types in client or server code. |
+| **User-Facing State Explanations** | **PASS** | `statusMessage` is rendered live via topbar status badges and workspace recovery banners. |
+| **Documentation Accuracy** | **PASS** | [`README.md`](README.md) accurately documents Vite Port 3000, actual implementation details, and B3 rationale. |
+| **Repository Build** | **PASS** | `npm run build` & `npm run typecheck` succeed completely (0 errors). |
