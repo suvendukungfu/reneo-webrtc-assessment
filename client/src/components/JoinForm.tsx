@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
-import { Copy, Check } from 'lucide-react';
+import { Copy, Check, Info } from 'lucide-react';
+import { getInitialSignalingUrl } from '../utils/signalingUrl.js';
 
 interface JoinFormProps {
   onJoin: (roomId: string, displayName: string, serverUrl: string) => void;
@@ -14,7 +15,7 @@ export const JoinForm: React.FC<JoinFormProps> = ({
 }) => {
   const [roomId, setRoomId] = useState('reneo-room-001');
   const [displayName, setDisplayName] = useState('Candidate User');
-  const [serverUrl, setServerUrl] = useState(`ws://${window.location.hostname || 'localhost'}:8080`);
+  const [serverUrl, setServerUrl] = useState(() => getInitialSignalingUrl());
   const [copied, setCopied] = useState(false);
 
   const handleSubmit = (e: React.FormEvent) => {
@@ -86,6 +87,10 @@ export const JoinForm: React.FC<JoinFormProps> = ({
             required
             disabled={isLoading}
           />
+          <small className="help-note" style={{ display: 'flex', alignItems: 'center', gap: '0.3rem', marginTop: '0.25rem' }}>
+            <Info size={12} />
+            Target local server (ws://localhost:8080) or hosted WebSocket endpoint.
+          </small>
         </div>
 
         <button

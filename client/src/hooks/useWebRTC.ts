@@ -11,6 +11,7 @@ import { useSignaling } from './useSignaling.js';
 import { useDevices } from './useDevices.js';
 import { useScreenShare } from './useScreenShare.js';
 import { useConnectionStats } from './useConnectionStats.js';
+import { getInitialSignalingUrl } from '../utils/signalingUrl.js';
 
 export function useWebRTC() {
   const [connectionState, setConnectionState] = useState<AppConnectionState>('idle');
@@ -489,7 +490,7 @@ export function useWebRTC() {
       if (!stream) return;
 
       // 2. Connect to WebSocket Signaling Server
-      const serverUrl = customServerUrl || `ws://${window.location.hostname || 'localhost'}:8080`;
+      const serverUrl = customServerUrl || getInitialSignalingUrl();
       signaling.connect(serverUrl, roomId, displayName);
     },
     [acquireLocalMedia, signaling]
