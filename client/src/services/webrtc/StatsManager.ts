@@ -1,16 +1,22 @@
-import type { QualityMetrics } from '../types/stats.js';
+import type {
+  QualityMetrics,
+  QualityAssessment,
+  QualityHistorySample,
+} from '../../types/stats.js';
 
-export class StatsService {
+export class StatsManager {
   private prevBytesReceived: number | null = null;
   private prevTimestamp: number | null = null;
   private timerId: number | null = null;
+  private historyWindow: QualityHistorySample[] = [];
+  private maxHistorySamples: number = 30;
 
   /**
    * Starts periodic getStats polling (default interval 1000ms)
    */
   public startPolling(
     pc: RTCPeerConnection,
-    onMetrics: (metrics: QualityMetrics) => void,
+    onMetrics: (metrics: QualityMetrics, assessment: QualityAssessment) => void,
     intervalMs: number = 1000
   ): void {
     this.stopPolling();
@@ -26,9 +32,19 @@ export class StatsService {
       try {
         const stats = await pc.getStats();
         const metrics = this.extractMetrics(stats);
-        onMetrics(metrics);
+        const assessment = this.assessQuality(metrics);
+
+        // Store sample in rolling history
+        this.addHistorySample({
+          timestamp: metrics.timestamp,
+          bitrateKbps: metrics.inboundBitrateKbps,
+          rttMs: metrics.rttMs,
+          lossPercent: metrics.packetLossPercent,
+        });
+
+        onMetrics(metrics, assessment);
       } catch (err) {
-        console.error('[StatsService] Error fetching getStats:', err);
+        console.error('[StatsManager] Error fetching getStats:', err);
       }
     }, intervalMs);
   }
@@ -43,14 +59,17 @@ export class StatsService {
     }
     this.prevBytesReceived = null;
     this.prevTimestamp = null;
+    this.historyWindow = [];
   }
 
   /**
-   * Parses RTCStatsReport into a clean QualityMetrics object across Chrome, Firefox, and Safari
+   * Parses RTCStatsReport into a normalized QualityMetrics object
    */
   private extractMetrics(stats: RTCStatsReport): QualityMetrics {
     let rttMs: number | null = null;
     let packetsLost: number | null = null;
+    let packetsReceived: number | null = null;
+    let packetLossPercent: number | null = null;
     let inboundBitrateKbps: number | null = null;
     let jitterMs: number | null = null;
     let resolution: { width: number; height: number } | null = null;
@@ -59,7 +78,7 @@ export class StatsService {
     let timestamp = Date.now();
 
     stats.forEach((report) => {
-      // Extract active candidate-pair RTT (compatible with Chrome, Firefox, Safari)
+      // Candidate-pair RTT (Chrome, Firefox, Safari)
       if (
         report.type === 'candidate-pair' &&
         (report.state === 'succeeded' || report.nominated === true || report.selected === true)
@@ -69,7 +88,7 @@ export class StatsService {
         }
       }
 
-      // Extract video inbound-rtp metrics
+      // Inbound video RTP statistics
       if (
         report.type === 'inbound-rtp' &&
         (report.kind === 'video' || report.mediaType === 'video')
@@ -77,7 +96,11 @@ export class StatsService {
         timestamp = report.timestamp || Date.now();
 
         if (typeof report.packetsLost === 'number') {
-          packetsLost = report.packetsLost;
+          packetsLost = Math.max(0, report.packetsLost);
+        }
+
+        if (typeof report.packetsReceived === 'number') {
+          packetsReceived = Math.max(0, report.packetsReceived);
         }
 
         if (typeof report.jitter === 'number') {
@@ -103,14 +126,13 @@ export class StatsService {
       }
     });
 
-    // Calculate inbound video bitrate delta
+    // Calculate Inbound Bitrate Delta
     if (currentBytes !== null) {
       if (this.prevBytesReceived !== null && this.prevTimestamp !== null) {
         const deltaBytes = currentBytes - this.prevBytesReceived;
         const deltaTimeMs = timestamp - this.prevTimestamp;
 
         if (deltaTimeMs > 0 && deltaBytes >= 0) {
-          // (bytes * 8 bits/byte) / (ms / 1000 ms/sec) / 1000 bits/kbps = (bytes * 8) / ms
           inboundBitrateKbps = Math.round((deltaBytes * 8) / deltaTimeMs);
         }
       }
@@ -118,15 +140,85 @@ export class StatsService {
       this.prevTimestamp = timestamp;
     }
 
+    // Calculate Packet Loss Percentage
+    if (packetsLost !== null && packetsReceived !== null) {
+      const totalPackets = packetsLost + packetsReceived;
+      if (totalPackets > 0) {
+        packetLossPercent = parseFloat(((packetsLost / totalPackets) * 100).toFixed(1));
+      } else {
+        packetLossPercent = 0;
+      }
+    }
+
     return {
       rttMs,
       packetsLost,
-      packetLossPercent: null,
+      packetLossPercent,
       inboundBitrateKbps,
       jitterMs,
       resolution,
       fps,
       timestamp,
     };
+  }
+
+  /**
+   * Assesses media quality based on real-time WebRTC transport metrics
+   */
+  public assessQuality(metrics: QualityMetrics): QualityAssessment {
+    const { rttMs, packetLossPercent, inboundBitrateKbps } = metrics;
+
+    if (rttMs === null && inboundBitrateKbps === null) {
+      return {
+        rating: 'Unavailable',
+        color: 'var(--text-muted)',
+        summary: 'Collecting connection statistics...',
+      };
+    }
+
+    const rtt = rttMs ?? 0;
+    const loss = packetLossPercent ?? 0;
+    const bitrate = inboundBitrateKbps ?? 0;
+
+    if (loss > 8 || rtt > 400 || (bitrate > 0 && bitrate < 150)) {
+      return {
+        rating: 'Poor',
+        color: 'var(--danger)',
+        summary: 'High packet loss or latency detected. Video may stutter.',
+      };
+    }
+
+    if (loss > 3 || rtt > 200 || bitrate < 500) {
+      return {
+        rating: 'Fair',
+        color: 'var(--warning)',
+        summary: 'Moderate network latency or packet loss.',
+      };
+    }
+
+    if (rtt <= 100 && loss < 1.0 && bitrate >= 1200) {
+      return {
+        rating: 'Excellent',
+        color: 'var(--success)',
+        summary: 'Optimal real-time media quality.',
+      };
+    }
+
+    return {
+      rating: 'Good',
+      color: 'var(--success)',
+      summary: 'Stable video and audio transmission.',
+    };
+  }
+
+  private addHistorySample(sample: QualityHistorySample): void {
+    this.historyWindow.push(sample);
+    if (this.historyWindow.length > this.maxHistorySamples) {
+      this.historyWindow.shift();
+    }
+  }
+
+  public getHistory(): QualityHistorySample[] {
+    return [...this.historyWindow];
   }
 }

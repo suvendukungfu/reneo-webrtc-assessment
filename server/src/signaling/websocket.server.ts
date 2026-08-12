@@ -3,6 +3,10 @@ import { randomUUID } from 'crypto';
 import { RoomManager } from '../rooms/room.manager.js';
 import { ClientSignalMessage, ServerSignalMessage } from '../types/signaling.js';
 
+interface IdentifiedWebSocket extends WebSocket {
+  clientId?: string;
+}
+
 export class SignalingServer {
   private wss: WebSocketServer;
   private roomManager: RoomManager;
@@ -11,7 +15,7 @@ export class SignalingServer {
     this.roomManager = new RoomManager();
     this.wss = new WebSocketServer({ port });
 
-    this.wss.on('error', (err: any) => {
+    this.wss.on('error', (err: Error & { code?: string }) => {
       if (err.code === 'EADDRINUSE') {
         console.error(`\n[SignalingServer Error] Port ${port} is already in use by another process.`);
         console.error(`Please stop the existing server or run: PORT=8081 npm run dev:server\n`);
@@ -21,9 +25,9 @@ export class SignalingServer {
       }
     });
 
-    this.wss.on('connection', (socket: WebSocket) => {
+    this.wss.on('connection', (socket: IdentifiedWebSocket) => {
       const clientId = randomUUID();
-      (socket as any).clientId = clientId;
+      socket.clientId = clientId;
 
       socket.on('message', (rawMessage: Buffer | string) => {
         this.handleMessage(socket, clientId, rawMessage);
@@ -207,9 +211,10 @@ export class SignalingServer {
       }
 
       default: {
+        const unknownType = (msg as { type?: string }).type || 'UNKNOWN';
         this.send(socket, {
           type: 'ERROR',
-          payload: { message: `Unknown message type: ${(msg as any).type}` },
+          payload: { message: `Unknown message type: ${unknownType}` },
         });
         break;
       }
