@@ -11,6 +11,16 @@ export class SignalingServer {
     this.roomManager = new RoomManager();
     this.wss = new WebSocketServer({ port });
 
+    this.wss.on('error', (err: any) => {
+      if (err.code === 'EADDRINUSE') {
+        console.error(`\n[SignalingServer Error] Port ${port} is already in use by another process.`);
+        console.error(`Please stop the existing server or run: PORT=8081 npm run dev:server\n`);
+        process.exit(1);
+      } else {
+        console.error('[SignalingServer Error]', err);
+      }
+    });
+
     this.wss.on('connection', (socket: WebSocket) => {
       const clientId = randomUUID();
       (socket as any).clientId = clientId;
