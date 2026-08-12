@@ -30,7 +30,7 @@ This checklist verifies that every single explicit requirement from the Reneo We
 | **20** | **2-Participant Room Limit** | Server rejects 3rd client with `ROOM_FULL`. | [`room.manager.ts`](server/src/rooms/room.manager.ts) | ✅ VERIFIED |
 | **21** | **Strict TypeScript & Zero `any`** | `"strict": true` enabled in compiler configs; 0 `any` types in client or server code. | [`tsconfig.app.json`](client/tsconfig.app.json) & [`server/tsconfig.json`](server/tsconfig.json) | ✅ VERIFIED |
 | **22** | **Part C Answers** | Detailed responses for C1, C2, C3, C4 + ASCII diagram. | [`ANSWERS.md`](ANSWERS.md) | ✅ VERIFIED |
-| **23** | **Screen Recording Script** | Dedicated video recording walkthrough script & guide. | [`DEMO_RECORDING_GUIDE.md`](DEMO_RECORDING_GUIDE.md) | ✅ VERIFIED |
+| **23** | **Screen Recording** | Screen recording will be submitted separately prior to evaluation. | Candidate Submission | ⏳ PENDING |
 | **24** | **Comprehensive README** | Architecture, API guide, Port 3000 setup, B3 rationale. | [`README.md`](README.md) | ✅ VERIFIED |
 
 ---

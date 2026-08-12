@@ -78,7 +78,7 @@ This document contains the final submission audit matrix for the **Reneo WebRTC 
 
 | Check | Status | Verification Summary |
 | :--- | :---: | :--- |
-| **Screen Recording Guide** | **PASS** | [`DEMO_RECORDING_GUIDE.md`](DEMO_RECORDING_GUIDE.md) & [`README.md:143`](README.md#L143) — Includes 3-5 minute demo walkthrough script and video link placeholder. |
+| **Screen Recording** | **PENDING** | Screen recording will be submitted separately prior to final evaluation. |
 | **Clean Code & Component Integration** | **PASS** | [`JoinForm.tsx`](client/src/components/JoinForm.tsx) and [`ConnectionStatus.tsx`](client/src/components/ConnectionStatus.tsx) are actively imported and rendered in the app. |
 | **Strict TypeScript Compliance** | **PASS** | `"strict": true` enabled in `tsconfig.app.json` and `server/tsconfig.json`. Zero `any` types in client or server code. |
 | **User-Facing State Explanations** | **PASS** | `statusMessage` is rendered live via topbar status badges and workspace recovery banners. |

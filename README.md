@@ -114,7 +114,6 @@ reneo-webrtc-assessment/
 ├── ANSWERS.md                  # Comprehensive Answers to Part C (C1-C4 + Diagram)
 ├── ADVANCED-FEATURE-TESTS.md   # Verification Test Suite for B1, B2, B3 & Edge Cases
 ├── INTERVIEW-WALKTHROUGH.md    # Senior WebRTC Q&A for Technical Follow-up Interview
-├── DEMO_RECORDING_GUIDE.md     # 3 to 5 Minute Screen Recording Script & Walkthrough Guide
 ├── ASSESSMENT-CHECKLIST.md     # Requirements Matrix
 ├── FINAL-SUBMISSION-CHECKLIST.md # Audit Matrix Verifying Requirements Coverage
 └── README.md
@@ -212,7 +211,7 @@ sequenceDiagram
 
 ## Screen Recording & Code Walkthrough Video
 
-- 📺 **Video Recording Status**: Screen recording script is prepared in [`DEMO_RECORDING_GUIDE.md`](DEMO_RECORDING_GUIDE.md). Video link will be attached prior to final candidate submission.
+- 📺 **Video Recording Status**: Screen recording will be submitted separately prior to final evaluation.
 
 ---
 
