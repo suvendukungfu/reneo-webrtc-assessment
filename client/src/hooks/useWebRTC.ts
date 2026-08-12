@@ -1,9 +1,16 @@
 import { useState, useRef, useCallback, useEffect } from 'react';
 import type { AppConnectionState, UserMediaError, MediaControlsState } from '../types/webrtc.js';
-import type { QualityMetrics } from '../types/stats.js';
-import { WebRTCService } from '../services/webrtc.service.js';
-import { StatsService } from '../services/stats.service.js';
+
+import { WebRTCManager } from '../services/webrtc/WebRTCManager.js';
+import { MediaManager } from '../services/webrtc/MediaManager.js';
+import { ScreenShareManager } from '../services/webrtc/ScreenShareManager.js';
+import { DeviceManager } from '../services/webrtc/DeviceManager.js';
+import { StatsManager } from '../services/webrtc/StatsManager.js';
+
 import { useSignaling } from './useSignaling.js';
+import { useDevices } from './useDevices.js';
+import { useScreenShare } from './useScreenShare.js';
+import { useConnectionStats } from './useConnectionStats.js';
 
 export function useWebRTC() {
   const [connectionState, setConnectionState] = useState<AppConnectionState>('idle');
@@ -15,9 +22,8 @@ export function useWebRTC() {
     isAudioMuted: false,
     isVideoDisabled: false,
   });
-  const [qualityMetrics, setQualityMetrics] = useState<QualityMetrics | null>(null);
 
-  // Call Duration Timer
+  // Call Duration Timer State
   const [callDuration, setCallDuration] = useState<number>(0);
   const [lastCallDuration, setLastCallDuration] = useState<number>(0);
 
@@ -28,12 +34,20 @@ export function useWebRTC() {
   const clientIdRef = useRef<string | null>(null);
   const peerIdRef = useRef<string | null>(null);
   const iceRestartCountRef = useRef<number>(0);
-  const localStreamRef = useRef<MediaStream | null>(null);
   const timerIntervalRef = useRef<number | null>(null);
   const maxIceRestarts = 2;
 
-  const webrtcServiceRef = useRef<WebRTCService | null>(null);
-  const statsServiceRef = useRef<StatsService>(new StatsService());
+  // WebRTC Service Managers
+  const mediaManagerRef = useRef<MediaManager>(new MediaManager());
+  const statsManagerRef = useRef<StatsManager>(new StatsManager());
+  const webRTCManagerRef = useRef<WebRTCManager | null>(null);
+  const screenShareManagerRef = useRef<ScreenShareManager | null>(null);
+  const deviceManagerRef = useRef<DeviceManager | null>(null);
+
+  // Sub-hooks for modular features
+  const devices = useDevices(deviceManagerRef);
+  const screenShare = useScreenShare(screenShareManagerRef);
+  const stats = useConnectionStats();
 
   const connectionStateRef = useRef<AppConnectionState>(connectionState);
   useEffect(() => {
@@ -100,7 +114,7 @@ export function useWebRTC() {
     }, 1000);
   }, [stopDurationTimer]);
 
-  // Set up signaling hooks with callbacks
+  // Set up signaling hook with event handlers
   const signaling = useSignaling({
     onJoined: (payload) => {
       clientIdRef.current = payload.clientId;
@@ -114,10 +128,9 @@ export function useWebRTC() {
       peerIdRef.current = payload.peerId;
       updateStateRef.current('connecting');
 
-      // If we are the initiator (Participant A), create offer and send to Peer B
-      if (isInitiatorRef.current && webrtcServiceRef.current) {
+      if (isInitiatorRef.current && webRTCManagerRef.current) {
         try {
-          const offer = await webrtcServiceRef.current.createOffer();
+          const offer = await webRTCManagerRef.current.createOffer();
           sendSignalRef.current({
             type: 'OFFER',
             payload: { sdp: offer },
@@ -133,11 +146,11 @@ export function useWebRTC() {
       peerIdRef.current = payload.senderId;
       updateStateRef.current('connecting');
 
-      if (!webrtcServiceRef.current) return;
+      if (!webRTCManagerRef.current) return;
 
       try {
-        await webrtcServiceRef.current.setRemoteDescription(payload.sdp);
-        const answer = await webrtcServiceRef.current.createAnswer();
+        await webRTCManagerRef.current.setRemoteDescription(payload.sdp);
+        const answer = await webRTCManagerRef.current.createAnswer();
         sendSignalRef.current({
           type: 'ANSWER',
           payload: { sdp: answer },
@@ -149,10 +162,10 @@ export function useWebRTC() {
     },
 
     onAnswer: async (payload) => {
-      if (!webrtcServiceRef.current) return;
+      if (!webRTCManagerRef.current) return;
 
       try {
-        await webrtcServiceRef.current.setRemoteDescription(payload.sdp);
+        await webRTCManagerRef.current.setRemoteDescription(payload.sdp);
       } catch (err) {
         console.error('[useWebRTC] Error handling SDP answer:', err);
         updateStateRef.current('failed', 'Failed to set remote description answer.');
@@ -160,16 +173,16 @@ export function useWebRTC() {
     },
 
     onIceCandidate: async (payload) => {
-      if (webrtcServiceRef.current) {
-        await webrtcServiceRef.current.addIceCandidate(payload.candidate);
+      if (webRTCManagerRef.current) {
+        await webRTCManagerRef.current.addIceCandidate(payload.candidate);
       }
     },
 
     onPeerLeft: (payload) => {
       peerIdRef.current = null;
       setRemoteStream(null);
-      statsServiceRef.current.stopPolling();
-      setQualityMetrics(null);
+      statsManagerRef.current.stopPolling();
+      stats.resetStats();
       stopDurationTimer();
 
       // Promote remaining peer to initiator
@@ -180,8 +193,8 @@ export function useWebRTC() {
       }
 
       // Re-initialize peer connection with active local stream
-      if (webrtcServiceRef.current) {
-        webrtcServiceRef.current.initializeConnection(localStreamRef.current);
+      if (webRTCManagerRef.current) {
+        webRTCManagerRef.current.initializeConnection(mediaManagerRef.current.getLocalStream());
       }
 
       setMediaError({
@@ -218,7 +231,6 @@ export function useWebRTC() {
     },
   });
 
-  // Keep a stable ref to sendSignal to prevent effect re-subscriptions
   const sendSignalRef = useRef(signaling.sendSignal);
   useEffect(() => {
     sendSignalRef.current = signaling.sendSignal;
@@ -238,9 +250,9 @@ export function useWebRTC() {
       `Re-establishing network path (${iceRestartCountRef.current}/${maxIceRestarts})...`
     );
 
-    if (isInitiatorRef.current && webrtcServiceRef.current) {
+    if (isInitiatorRef.current && webRTCManagerRef.current) {
       try {
-        const offer = await webrtcServiceRef.current.restartIce();
+        const offer = await webRTCManagerRef.current.restartIce();
         sendSignalRef.current({
           type: 'OFFER',
           payload: { sdp: offer },
@@ -257,9 +269,9 @@ export function useWebRTC() {
     handleIceFailureRef.current = handleIceFailure;
   }, [handleIceFailure]);
 
-  // Stable initialization of WebRTCService instance (mount once)
+  // Stable initialization of WebRTCManager, ScreenShareManager, and DeviceManager
   useEffect(() => {
-    const service = new WebRTCService({
+    const webRTCManager = new WebRTCManager({
       onIceCandidate: (candidate) => {
         sendSignalRef.current({
           type: 'ICE_CANDIDATE',
@@ -272,14 +284,14 @@ export function useWebRTC() {
       onConnectionStateChange: (state, iceState) => {
         if (state === 'connected' || iceState === 'connected' || iceState === 'completed') {
           updateStateRef.current('connected');
-          iceRestartCountRef.current = 0; // Reset restart counter on clean connect
+          iceRestartCountRef.current = 0;
           startDurationTimer();
 
-          // Start getStats observability polling
-          const pc = webrtcServiceRef.current?.getPeerConnection();
+          // Start getStats polling
+          const pc = webRTCManagerRef.current?.getPeerConnection();
           if (pc) {
-            statsServiceRef.current.startPolling(pc, (metrics) => {
-              setQualityMetrics(metrics);
+            statsManagerRef.current.startPolling(pc, (metrics, assessment) => {
+              stats.handleMetricsUpdate(metrics, assessment, statsManagerRef.current.getHistory());
             });
           }
         } else if (state === 'connecting' || iceState === 'checking') {
@@ -301,69 +313,117 @@ export function useWebRTC() {
       },
     });
 
-    webrtcServiceRef.current = service;
+    const screenShareManager = new ScreenShareManager(
+      webRTCManager,
+      mediaManagerRef.current,
+      {
+        onStateChange: (isSharing, statusText) => {
+          if (statusText) {
+            setStatusMessage(statusText);
+          }
+          screenShare.setScreenShareState({
+            isSharing,
+            status: isSharing ? 'sharing' : 'idle',
+          });
+        },
+        onError: (title, message) => {
+          setMediaError({
+            type: 'UNKNOWN',
+            title,
+            message,
+          });
+        },
+      }
+    );
+
+    const deviceManager = new DeviceManager(
+      webRTCManager,
+      mediaManagerRef.current,
+      {
+        onDevicesUpdated: (lists) => {
+          devices.setDeviceLists(lists);
+          devices.setSelectedDevices(deviceManager.getSelectedDevices());
+        },
+        onDeviceSwitchState: (isSwitching, message) => {
+          if (message) {
+            setStatusMessage(message);
+          }
+          devices.setSwitchState({
+            status: isSwitching ? 'switching' : 'idle',
+          });
+        },
+        onError: (title, message) => {
+          setMediaError({
+            type: 'UNKNOWN',
+            title,
+            message,
+          });
+        },
+      }
+    );
+
+    webRTCManagerRef.current = webRTCManager;
+    screenShareManagerRef.current = screenShareManager;
+    deviceManagerRef.current = deviceManager;
 
     return () => {
-      service.close();
-      statsServiceRef.current.stopPolling();
+      webRTCManager.close();
+      screenShareManager.cleanup();
+      statsManagerRef.current.stopPolling();
       stopDurationTimer();
     };
   }, [startDurationTimer, stopDurationTimer]);
 
   // Request Local Media (Camera & Microphone)
   const acquireLocalMedia = useCallback(async (): Promise<MediaStream | null> => {
-    if (!navigator?.mediaDevices?.getUserMedia) {
-      setMediaError({
-        type: 'PERMISSION_DENIED',
-        title: 'Browser Security Restriction (Insecure Context)',
-        message: 'Camera & microphone access requires HTTPS or localhost. Browsers block media APIs when accessed over plain HTTP IP addresses (e.g. http://192.168.1.100).',
-        details: 'Solution: Use an HTTPS tunnel (npx localtunnel --port 3000) or test on localhost.',
-      });
-      updateState('idle');
-      return null;
-    }
-
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({
-        video: {
-          width: { ideal: 1280 },
-          height: { ideal: 720 },
-          frameRate: { ideal: 30 },
-        },
-        audio: true,
-      });
-
-      localStreamRef.current = stream;
+      const stream = await mediaManagerRef.current.acquireLocalMedia();
       setLocalStream(stream);
       setMediaControls({ isAudioMuted: false, isVideoDisabled: false });
 
-      if (webrtcServiceRef.current) {
-        webrtcServiceRef.current.initializeConnection(stream);
+      if (webRTCManagerRef.current) {
+        webRTCManagerRef.current.initializeConnection(stream);
+      }
+
+      // Enumerate devices again after media permission has been granted
+      if (deviceManagerRef.current) {
+        await deviceManagerRef.current.enumerateDevices();
       }
 
       return stream;
-    } catch (err: any) {
-      console.error('[useWebRTC] getUserMedia error:', err);
+    } catch (err: unknown) {
+      console.error('[useWebRTC] acquireLocalMedia error:', err);
 
-      if (err.name === 'NotAllowedError' || err.name === 'PermissionDeniedError') {
+      const errorObj = err instanceof Error ? err : new Error(String(err));
+      const errName = errorObj.name;
+      const errMessage = errorObj.message;
+
+      if (errMessage === 'BROWSER_INSECURE_CONTEXT') {
+        setMediaError({
+          type: 'PERMISSION_DENIED',
+          title: 'Browser Security Restriction (Insecure Context)',
+          message: 'Camera & microphone access requires HTTPS or localhost. Browsers block media APIs when accessed over plain HTTP IP addresses.',
+          details: 'Solution: Access via localhost:3000 or use an HTTPS tunnel.',
+        });
+      } else if (errName === 'NotAllowedError' || errName === 'PermissionDeniedError') {
         setMediaError({
           type: 'PERMISSION_DENIED',
           title: 'Camera and microphone access is required',
           message: 'Please allow access in your browser settings and try again.',
-          details: err.message,
+          details: errMessage,
         });
-      } else if (err.name === 'NotFoundError' || err.name === 'DevicesNotFoundError') {
+      } else if (errName === 'NotFoundError' || errName === 'DevicesNotFoundError') {
         setMediaError({
           type: 'DEVICE_NOT_FOUND',
           title: 'No media device detected',
           message: 'No camera or microphone was found on this device. Please connect a media device.',
-          details: err.message,
+          details: errMessage,
         });
       } else {
         setMediaError({
           type: 'UNKNOWN',
           title: 'Media Capture Error',
-          message: err.message || 'An unexpected error occurred while accessing media devices.',
+          message: errMessage || 'An unexpected error occurred while accessing media devices.',
         });
       }
 
@@ -377,15 +437,17 @@ export function useWebRTC() {
     stopDurationTimer();
     setLastCallDuration(callDuration);
     setCallDuration(0);
-    statsServiceRef.current.stopPolling();
-    setQualityMetrics(null);
+    statsManagerRef.current.stopPolling();
+    stats.resetStats();
+
+    // Clean up screen sharing resources
+    if (screenShareManagerRef.current) {
+      screenShareManagerRef.current.cleanup();
+    }
 
     // Stop local media tracks
-    if (localStreamRef.current) {
-      localStreamRef.current.getTracks().forEach((track) => track.stop());
-      localStreamRef.current = null;
-      setLocalStream(null);
-    }
+    mediaManagerRef.current.stopAllTracks();
+    setLocalStream(null);
 
     // Clear remote media stream
     if (remoteStream) {
@@ -394,8 +456,8 @@ export function useWebRTC() {
     }
 
     // Close RTCPeerConnection
-    if (webrtcServiceRef.current) {
-      webrtcServiceRef.current.close();
+    if (webRTCManagerRef.current) {
+      webRTCManagerRef.current.close();
     }
 
     // Close WebSocket
@@ -413,7 +475,7 @@ export function useWebRTC() {
     } else {
       updateState('idle');
     }
-  }, [callDuration, remoteStream, signaling, stopDurationTimer, updateState]);
+  }, [callDuration, remoteStream, signaling, stats, stopDurationTimer, updateState]);
 
   // Join Call Flow
   const joinCall = useCallback(
@@ -435,24 +497,14 @@ export function useWebRTC() {
 
   // Mute / Unmute Audio (Toggle track.enabled without rebuilding connection)
   const toggleAudio = useCallback(() => {
-    const stream = localStreamRef.current;
-    if (!stream) return;
-    const audioTrack = stream.getAudioTracks()[0];
-    if (audioTrack) {
-      audioTrack.enabled = !audioTrack.enabled;
-      setMediaControls((prev) => ({ ...prev, isAudioMuted: !audioTrack.enabled }));
-    }
+    const isMuted = mediaManagerRef.current.toggleAudio();
+    setMediaControls((prev) => ({ ...prev, isAudioMuted: isMuted }));
   }, []);
 
   // Disable / Enable Video (Toggle track.enabled without rebuilding connection)
   const toggleVideo = useCallback(() => {
-    const stream = localStreamRef.current;
-    if (!stream) return;
-    const videoTrack = stream.getVideoTracks()[0];
-    if (videoTrack) {
-      videoTrack.enabled = !videoTrack.enabled;
-      setMediaControls((prev) => ({ ...prev, isVideoDisabled: !videoTrack.enabled }));
-    }
+    const isDisabled = mediaManagerRef.current.toggleVideo();
+    setMediaControls((prev) => ({ ...prev, isVideoDisabled: isDisabled }));
   }, []);
 
   const clearError = useCallback(() => {
@@ -471,7 +523,29 @@ export function useWebRTC() {
     remoteStream,
     mediaError,
     mediaControls,
-    qualityMetrics,
+
+    // B3 Quality Metrics & Assessment
+    qualityMetrics: stats.qualityMetrics,
+    qualityAssessment: stats.qualityAssessment,
+    qualityHistory: stats.qualityHistory,
+
+    // B1 Screen Sharing
+    isScreenSharing: screenShare.isSharing,
+    screenShareState: screenShare.screenShareState,
+    toggleScreenShare: screenShare.toggleScreenShare,
+    startScreenShare: screenShare.startScreenShare,
+    stopScreenShare: screenShare.stopScreenShare,
+
+    // B2 Device Switching
+    deviceLists: devices.deviceLists,
+    selectedDevices: devices.selectedDevices,
+    deviceSwitchState: devices.switchState,
+    switchMicrophone: devices.switchMicrophone,
+    switchCamera: (deviceId: string) => devices.switchCamera(deviceId, screenShare.isSharing),
+    switchSpeaker: devices.switchSpeaker,
+    refreshDevices: devices.refreshDevices,
+
+    // General Call Controls
     callDuration,
     lastCallDuration,
     roomId: roomIdRef.current || 'reneo-room-001',
