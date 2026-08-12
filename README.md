@@ -10,6 +10,9 @@ This implementation uses **native browser WebRTC APIs** directly (`RTCPeerConnec
 
 The application enables two participants to enter a shared Room ID, negotiate a peer-to-peer audio/video connection using WebSocket signaling, handle network interruptions via ICE restart, monitor connection stats in real time via a `getStats()` telemetry engine, and handle all common media and connectivity failure modes gracefully with visible user feedback.
 
+- 🚀 **Live Production Deployment (Vercel)**: [https://rtcassign-suvendukungfus-projects.vercel.app](https://rtcassign-suvendukungfus-projects.vercel.app)
+- 📦 **Inspect Build Details**: [https://vercel.com/suvendukungfus-projects/rtcassign](https://vercel.com/suvendukungfus-projects/rtcassign)
+
 ---
 
 ## Part B Selection & Additional Enhancements
