@@ -12,7 +12,7 @@ interface QualityPanelProps {
   onClose: () => void;
 }
 
-export const QualityPanel: React.FC<QualityPanelProps> = ({
+const QualityPanelComponent: React.FC<QualityPanelProps> = ({
   metrics,
   assessment,
   history = [],
@@ -194,3 +194,5 @@ export const QualityPanel: React.FC<QualityPanelProps> = ({
     </div>
   );
 };
+
+export const QualityPanel = React.memo(QualityPanelComponent);

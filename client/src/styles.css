@@ -420,6 +420,9 @@ html, body {
   height: 100%;
   object-fit: cover;
   transition: opacity 150ms ease;
+  transform: translateZ(0);
+  will-change: opacity;
+  contain: layout paint;
 }
 
 .video-hidden {
@@ -508,7 +511,10 @@ html, body {
   border-radius: var(--radius-md);
   overflow: hidden;
   box-shadow: var(--shadow-lg);
-  z-index: 15;
+  z-index: 20;
+  transform: translateZ(0);
+  will-change: transform;
+  contain: layout paint;
   transition: transform var(--transition-fast);
 }
 

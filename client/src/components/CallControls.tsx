@@ -19,7 +19,7 @@ interface CallControlsProps {
   onHangUp: () => void;
 }
 
-export const CallControls: React.FC<CallControlsProps> = ({
+const CallControlsComponent: React.FC<CallControlsProps> = ({
   controls,
   screenShareState,
   isQualityOpen,
@@ -151,3 +151,5 @@ export const CallControls: React.FC<CallControlsProps> = ({
     </div>
   );
 };
+
+export const CallControls = React.memo(CallControlsComponent);

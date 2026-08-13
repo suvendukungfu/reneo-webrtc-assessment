@@ -118,6 +118,28 @@ export class WebRTCManager {
   }
 
   /**
+   * Applies production-grade encoding constraints (max bitrate, framerate bounds)
+   */
+  public optimizeVideoEncodingParameters(maxBitrateBps: number = 2_500_000): void {
+    const videoSender = this.getVideoSender();
+    if (!videoSender || typeof videoSender.getParameters !== 'function') return;
+
+    try {
+      const params = videoSender.getParameters();
+      if (!params.encodings || params.encodings.length === 0) {
+        params.encodings = [{}];
+      }
+      params.encodings[0].maxBitrate = maxBitrateBps;
+      params.encodings[0].maxFramerate = 30;
+      videoSender.setParameters(params).catch((err) => {
+        console.warn('[WebRTCManager] Set encoding parameters warning:', err);
+      });
+    } catch (err) {
+      console.warn('[WebRTCManager] Error setting video encoding parameters:', err);
+    }
+  }
+
+  /**
    * Replaces the video track on the active RTCRtpSender without tearing down RTCPeerConnection or renegotiating
    */
   public async replaceVideoTrack(newTrack: MediaStreamTrack | null): Promise<boolean> {

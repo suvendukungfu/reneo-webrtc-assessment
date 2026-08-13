@@ -9,4 +9,22 @@ export default defineConfig({
     port: 3000,
     host: true,
   },
+  build: {
+    target: 'esnext',
+    cssCodeSplit: true,
+    sourcemap: false,
+    chunkSizeWarningLimit: 1000,
+    rollupOptions: {
+      output: {
+        manualChunks(id) {
+          if (id.includes('node_modules')) {
+            if (id.includes('lucide-react')) {
+              return 'icons';
+            }
+            return 'vendor';
+          }
+        },
+      },
+    },
+  },
 });
