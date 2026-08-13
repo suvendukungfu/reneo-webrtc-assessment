@@ -1,9 +1,9 @@
-import { useState, useCallback, useRef, useEffect } from 'react';
+import { useState, useRef, useCallback, useEffect } from 'react';
 import type { ClientSignalMessage, ServerSignalMessage } from '../types/signaling.js';
 
 export type SignalingStatus = 'disconnected' | 'connecting' | 'connected' | 'error';
 
-export interface UseSignalingCallbacks {
+export interface SignalingCallbacks {
   onJoined?: (payload: { clientId: string; roomId: string; isInitiator: boolean }) => void;
   onPeerJoined?: (payload: { peerId: string }) => void;
   onPeerLeft?: (payload: { peerId: string; isInitiator?: boolean }) => void;
@@ -15,28 +15,32 @@ export interface UseSignalingCallbacks {
   onSignalingDisconnected?: () => void;
 }
 
-export function useSignaling(callbacks: UseSignalingCallbacks) {
+export function useSignaling(callbacks: SignalingCallbacks) {
   const [status, setStatus] = useState<SignalingStatus>('disconnected');
   const socketRef = useRef<WebSocket | null>(null);
-  const callbacksRef = useRef<UseSignalingCallbacks>(callbacks);
 
-  // Keep callbacksRef up to date without triggering re-connects
+  // Store latest callbacks in ref to prevent unnecessary re-subscriptions
+  const callbacksRef = useRef(callbacks);
   useEffect(() => {
     callbacksRef.current = callbacks;
   }, [callbacks]);
 
-  const sendSignal = useCallback((message: ClientSignalMessage) => {
-    if (socketRef.current && socketRef.current.readyState === WebSocket.OPEN) {
-      socketRef.current.send(JSON.stringify(message));
-    } else {
-      console.warn('[useSignaling] Cannot send message: WebSocket is not open.');
-    }
-  }, []);
-
   const disconnect = useCallback(() => {
     if (socketRef.current) {
-      if (socketRef.current.readyState === WebSocket.OPEN) {
-        socketRef.current.send(JSON.stringify({ type: 'LEAVE' }));
+      // Clean up event listeners before closing to prevent memory leaks / stale state updates
+      socketRef.current.onopen = null;
+      socketRef.current.onmessage = null;
+      socketRef.current.onerror = null;
+      socketRef.current.onclose = null;
+      if (
+        socketRef.current.readyState === WebSocket.OPEN ||
+        socketRef.current.readyState === WebSocket.CONNECTING
+      ) {
+        try {
+          socketRef.current.send(JSON.stringify({ type: 'LEAVE' }));
+        } catch {
+          // Socket already closing
+        }
       }
       socketRef.current.close();
       socketRef.current = null;
@@ -45,10 +49,24 @@ export function useSignaling(callbacks: UseSignalingCallbacks) {
   }, []);
 
   const connect = useCallback(
-    (serverUrl: string, roomId: string, displayName?: string) => {
+    async (serverUrl: string, roomId: string, displayName?: string) => {
       disconnect(); // Ensure clean state before connecting
 
       setStatus('connecting');
+
+      // Pre-flight bypass for localtunnel / tunnel proxies to skip interstitial landing pages
+      if (serverUrl.includes('loca.lt')) {
+        const httpUrl = serverUrl.replace(/^wss:/, 'https:').replace(/^ws:/, 'http:');
+        try {
+          await fetch(httpUrl, {
+            headers: { 'bypass-tunnel-reminder': 'true' },
+            mode: 'no-cors',
+          });
+        } catch {
+          // Ignore CORS response errors; bypass request header registration settles session
+        }
+      }
+
       let ws: WebSocket;
       try {
         ws = new WebSocket(serverUrl);
@@ -110,7 +128,7 @@ export function useSignaling(callbacks: UseSignalingCallbacks) {
       ws.onerror = () => {
         setStatus('error');
         callbacksRef.current.onError?.({
-          message: 'WebSocket signaling server connection error.',
+          message: `WebSocket signaling connection error at ${serverUrl}. If testing locally, ensure your server is running via 'npm run dev:server'.`,
         });
       };
 
@@ -122,17 +140,19 @@ export function useSignaling(callbacks: UseSignalingCallbacks) {
     [disconnect]
   );
 
-  // Clean up on component unmount
-  useEffect(() => {
-    return () => {
-      disconnect();
-    };
-  }, [disconnect]);
+  const sendMessage = useCallback((message: ClientSignalMessage) => {
+    if (socketRef.current && socketRef.current.readyState === WebSocket.OPEN) {
+      socketRef.current.send(JSON.stringify(message));
+    } else {
+      console.warn('[useSignaling] Cannot send message: WebSocket is not open.');
+    }
+  }, []);
 
   return {
     status,
     connect,
     disconnect,
-    sendSignal,
+    sendMessage,
+    sendSignal: sendMessage,
   };
 }
