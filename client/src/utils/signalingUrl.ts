@@ -16,5 +16,5 @@ export function getInitialSignalingUrl(): string {
 
   // 3. Deployed on remote host (Vercel / Cloud CDN):
   // Default to live secure WebSocket signaling server so cross-device and mobile users connect instantly!
-  return 'wss://reneo-webrtc-v2.loca.lt';
+  return 'wss://reneo-webrtc-signaling.loca.lt';
 }
